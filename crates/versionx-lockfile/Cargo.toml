@@ -1,0 +1,31 @@
+[package]
+name = "versionx-lockfile"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+readme.workspace = true
+description = "versionx.lock serialization, BLAKE3 content hashing, CI verify."
+
+[lints]
+workspace = true
+
+[dependencies]
+thiserror.workspace = true
+serde = { workspace = true }
+toml = { workspace = true }
+toml_edit.workspace = true
+camino.workspace = true
+blake3.workspace = true
+sha2.workspace = true
+hex.workspace = true
+chrono.workspace = true
+tracing.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
+insta = { workspace = true }
+

@@ -1,0 +1,36 @@
+[package]
+name = "versionx-mcp"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+readme.workspace = true
+description = "MCP server over stdio + loopback HTTP, built on the official rmcp SDK."
+
+[package.metadata.wix]
+upgrade-guid = "F73A69A2-2F55-445F-B8F8-88830A521312"
+path-guid = "4EDAF012-BCA0-4EEF-99F6-8ABE1BB2816A"
+license = false
+eula = false
+
+[lints]
+workspace = true
+
+[[bin]]
+name = "versionx-mcp"
+path = "src/main.rs"
+
+[dependencies]
+clap = { workspace = true }
+tokio = { workspace = true }
+anyhow.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+rmcp = { workspace = true }
+serde = { workspace = true }
+serde_json.workspace = true
+versionx-core.workspace = true
+

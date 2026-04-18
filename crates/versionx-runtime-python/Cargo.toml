@@ -1,0 +1,33 @@
+[package]
+name = "versionx-runtime-python"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+readme.workspace = true
+description = "CPython installer using python-build-standalone with sysconfig patching."
+
+[lints]
+workspace = true
+
+[dependencies]
+async-trait.workspace = true
+tokio = { workspace = true }
+thiserror.workspace = true
+reqwest = { workspace = true }
+serde = { workspace = true }
+serde_json.workspace = true
+camino.workspace = true
+tracing.workspace = true
+sha2.workspace = true
+hex.workspace = true
+regex.workspace = true
+versionx-runtime-trait.workspace = true
+versionx-events.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
+

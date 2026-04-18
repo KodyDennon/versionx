@@ -1,0 +1,25 @@
+name: Feature request
+description: Suggest a new capability for Versionx
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem are you trying to solve?
+      description: Start with the user story, not the implementation.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution (optional)
+      description: If you already have an approach in mind, sketch it here. Otherwise leave blank.
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+  - type: textarea
+    id: spec-alignment
+    attributes:
+      label: Does this align with the existing spec?
+      description: If it does, link the relevant `docs/spec/` file + section. If it doesn't, that's fine — explain why.

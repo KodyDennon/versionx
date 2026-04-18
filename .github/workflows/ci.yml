@@ -1,0 +1,124 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: 0
+  RUST_BACKTRACE: 1
+  RUSTFLAGS: -D warnings
+
+jobs:
+  fmt:
+    name: rustfmt
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+      - run: cargo fmt --all -- --check
+
+  clippy:
+    name: clippy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo clippy --workspace --all-targets --all-features -- -D warnings
+
+  test:
+    name: test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - ubuntu-latest
+          - macos-14        # aarch64
+          - windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.os }}
+      - uses: taiki-e/install-action@nextest
+      - name: cargo build
+        run: cargo build --workspace --all-targets
+      - name: cargo nextest
+        run: cargo nextest run --workspace --all-targets --no-fail-fast
+      - name: cargo test doctests
+        run: cargo test --workspace --doc
+
+  msrv:
+    name: MSRV (1.95)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.95.0
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo check --workspace --all-targets
+
+  deny:
+    name: cargo-deny
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: EmbarkStudios/cargo-deny-action@v2
+        with:
+          command: check bans licenses sources advisories
+
+  typos:
+    name: typos
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: crate-ci/typos@master
+
+  cross-build:
+    name: cross-build ${{ matrix.target }}
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { runner: ubuntu-latest,  target: x86_64-unknown-linux-gnu }
+          - { runner: ubuntu-latest,  target: aarch64-unknown-linux-gnu }
+          - { runner: ubuntu-latest,  target: x86_64-unknown-linux-musl }
+          - { runner: ubuntu-latest,  target: aarch64-unknown-linux-musl }
+          - { runner: macos-14,       target: x86_64-apple-darwin }
+          - { runner: macos-14,       target: aarch64-apple-darwin }
+          - { runner: windows-latest, target: x86_64-pc-windows-msvc }
+          - { runner: windows-latest, target: aarch64-pc-windows-msvc }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: cross-${{ matrix.target }}
+      - name: Install zig + cargo-zigbuild
+        if: startsWith(matrix.runner, 'ubuntu') || startsWith(matrix.runner, 'macos')
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-zigbuild
+      - name: Build (zig)
+        if: startsWith(matrix.runner, 'ubuntu') || startsWith(matrix.runner, 'macos')
+        run: cargo zigbuild --workspace --target ${{ matrix.target }}
+      - name: Build (native)
+        if: startsWith(matrix.runner, 'windows')
+        run: cargo build --workspace --target ${{ matrix.target }}

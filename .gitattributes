@@ -1,0 +1,14 @@
+* text=auto eol=lf
+
+# Force LF line endings for lockfiles + TOML config.
+versionx.lock      text eol=lf
+versionx.policy.lock text eol=lf
+Cargo.lock         text eol=lf
+*.toml             text eol=lf
+*.yml              text eol=lf
+*.yaml             text eol=lf
+*.md               text eol=lf
+*.rs               text eol=lf
+
+# Linguist hints for GitHub language detection.
+docs/spec/** linguist-documentation

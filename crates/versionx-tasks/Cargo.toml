@@ -1,0 +1,29 @@
+[package]
+name = "versionx-tasks"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+readme.workspace = true
+description = "Native task runner: topological exec, parallel jobs, cache in v1.2."
+
+[lints]
+workspace = true
+
+[dependencies]
+async-trait.workspace = true
+tokio = { workspace = true }
+thiserror.workspace = true
+serde = { workspace = true }
+camino.workspace = true
+tracing.workspace = true
+petgraph.workspace = true
+blake3.workspace = true
+versionx-events.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
+

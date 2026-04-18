@@ -1,0 +1,30 @@
+[package]
+name = "versionx-config"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+readme.workspace = true
+description = "versionx.toml parsing, schema validation, migrations, inheritance."
+
+[lints]
+workspace = true
+
+[dependencies]
+thiserror.workspace = true
+serde = { workspace = true }
+toml = { workspace = true }
+toml_edit.workspace = true
+camino.workspace = true
+tracing.workspace = true
+directories.workspace = true
+indexmap = { workspace = true }
+semver.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
+insta = { workspace = true }
+

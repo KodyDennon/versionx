@@ -1,0 +1,21 @@
+[package]
+name = "versionx-adapters"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+readme.workspace = true
+description = "Meta-crate re-exporting every ecosystem adapter for convenience."
+
+[lints]
+workspace = true
+
+[dependencies]
+versionx-adapter-trait.workspace = true
+versionx-adapter-node.workspace = true
+versionx-adapter-python.workspace = true
+versionx-adapter-rust.workspace = true
+

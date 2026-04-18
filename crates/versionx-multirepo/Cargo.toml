@@ -1,0 +1,26 @@
+[package]
+name = "versionx-multirepo"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+readme.workspace = true
+description = "Submodule / subtree / virtual-monorepo / ref link handlers."
+
+[lints]
+workspace = true
+
+[dependencies]
+async-trait.workspace = true
+tokio = { workspace = true }
+thiserror.workspace = true
+serde = { workspace = true }
+camino.workspace = true
+tracing.workspace = true
+url = { workspace = true }
+versionx-git.workspace = true
+versionx-events.workspace = true
+

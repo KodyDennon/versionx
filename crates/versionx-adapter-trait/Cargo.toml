@@ -1,0 +1,23 @@
+[package]
+name = "versionx-adapter-trait"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+readme.workspace = true
+description = "Package-manager adapter trait shared by every ecosystem adapter."
+
+[lints]
+workspace = true
+
+[dependencies]
+async-trait.workspace = true
+thiserror.workspace = true
+serde = { workspace = true }
+serde_json.workspace = true
+camino.workspace = true
+versionx-events.workspace = true
+

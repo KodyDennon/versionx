@@ -1,0 +1,55 @@
+# Rust
+/target/
+**/*.rs.bk
+Cargo.lock.bak
+
+# cargo-dist
+/dist/
+
+# IDE / editor
+/.idea/
+/.vscode/
+!/.vscode/extensions.json
+!/.vscode/settings.recommended.json
+.DS_Store
+*.swp
+*.swo
+*~
+
+# Env / secrets
+.env
+.env.local
+.env.*.local
+!.env.example
+
+# Versionx runtime data (for dogfooding)
+.versionx/state.db
+.versionx/cache/
+.versionx/logs/
+
+# Logs
+*.log
+
+# Coverage
+/coverage/
+*.profraw
+*.profdata
+tarpaulin-report.html
+
+# Generated docs
+/book/
+/target/doc/
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# Temp
+*.tmp
+/tmp/

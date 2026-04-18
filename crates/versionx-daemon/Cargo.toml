@@ -1,0 +1,37 @@
+[package]
+name = "versionx-daemon"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+readme.workspace = true
+description = "The `versiond` long-running daemon with JSON-RPC 2.0 over UDS / named pipe."
+
+[package.metadata.wix]
+upgrade-guid = "D07A7BE8-C747-4113-BB18-D94F56BA9AD7"
+path-guid = "24650719-2A1F-400F-A558-4CAFD6F7A184"
+license = false
+eula = false
+
+[lints]
+workspace = true
+
+[[bin]]
+name = "versiond"
+path = "src/main.rs"
+
+[dependencies]
+clap = { workspace = true }
+tokio = { workspace = true }
+anyhow.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+serde = { workspace = true }
+serde_json.workspace = true
+camino.workspace = true
+parking_lot.workspace = true
+versionx-core.workspace = true
+

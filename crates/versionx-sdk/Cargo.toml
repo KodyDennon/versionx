@@ -1,0 +1,21 @@
+[package]
+name = "versionx-sdk"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+readme.workspace = true
+description = "Public Rust SDK re-exporting versionx-core's stable surface."
+
+[lints]
+workspace = true
+
+[dependencies]
+versionx-core.workspace = true
+versionx-events.workspace = true
+tokio = { workspace = true }
+thiserror.workspace = true
+

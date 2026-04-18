@@ -1,0 +1,64 @@
+[workspace]
+members = ["cargo:."]
+
+# Config for `dist` (cargo-dist). Docs: https://axodotdev.github.io/cargo-dist
+[dist]
+cargo-dist-version = "0.31.0"
+
+# CI backend.
+ci = "github"
+
+# Installers dist will generate alongside raw archives.
+# - shell:      curl | sh installer for Unix
+# - powershell: PowerShell one-liner for Windows
+# - homebrew:   formula published to a tap (set `tap = "kody/homebrew-tap"` later)
+# - npm:        shim package on npm that downloads the right binary
+# - msi:        Windows MSI installer
+installers = ["shell", "powershell", "homebrew", "npm", "msi"]
+
+# Target platforms we ship binaries for. Every release produces one archive per target.
+targets = [
+    "x86_64-unknown-linux-gnu",
+    "aarch64-unknown-linux-gnu",
+    "x86_64-unknown-linux-musl",
+    "aarch64-unknown-linux-musl",
+    "x86_64-apple-darwin",
+    "aarch64-apple-darwin",
+    "x86_64-pc-windows-msvc",
+    "aarch64-pc-windows-msvc",
+]
+
+# Which specific binaries from the workspace to ship. `versionx` is the user-facing CLI;
+# `versiond` is the daemon; `versionx-shim` is the tiny trampoline. The tui/web/mcp binaries
+# ship as part of `versionx-cli` (subcommands) rather than standalone artifacts.
+# Uncomment once the binaries actually do something in a later phase.
+# binaries = ["versionx", "versiond", "versionx-shim"]
+
+# Publish a formula to a GitHub Homebrew tap.
+# tap = "kody/homebrew-tap"
+# publish-jobs = ["homebrew"]
+
+# npm + PyPI shim package scope.
+# npm-scope = "@kody"
+
+# Generate machine-readable manifest for GitHub Release body.
+create-release = true
+
+# Sign + attest artifacts via sigstore (requires id-token permission on the workflow).
+# github-attestations = true
+# sign = ["sigstore"]
+
+# Codesigning:
+# macOS notarization via a stored Apple ID + app-specific password, or rcodesign.
+# macos-sign-and-notarize = "rcodesign"
+# Windows Authenticode via Azure Key Vault + AzureSignTool.
+# windows-code-signing = "azure-key-vault"
+
+# Pin Rust toolchain used for building release artifacts.
+rust-toolchain-version = "1.95"
+
+# Use musl builds for Linux archives for maximum portability.
+precise-builds = true
+
+# Generate release notes from CHANGELOG.md sections.
+release-branch = "main"

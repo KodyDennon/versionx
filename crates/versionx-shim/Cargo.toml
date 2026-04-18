@@ -1,0 +1,28 @@
+[package]
+name = "versionx-shim"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+readme.workspace = true
+description = "Minimal Rust trampoline binary (Volta-style argv[0] dispatch) for per-repo toolchain resolution."
+
+[package.metadata.wix]
+upgrade-guid = "6BF39961-146A-465F-A500-424C39CA2091"
+path-guid = "A7E1F274-8680-481E-B54F-CFE15362A9AD"
+license = false
+eula = false
+
+[lints]
+workspace = true
+
+[[bin]]
+name = "versionx-shim"
+path = "src/main.rs"
+
+# Shim has near-zero dependencies to keep it tiny.
+[dependencies]
+camino.workspace = true

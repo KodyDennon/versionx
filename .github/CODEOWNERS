@@ -1,0 +1,8 @@
+* @kody
+
+# Security-critical surfaces get extra scrutiny.
+/crates/versionx-shim/      @kody
+/crates/versionx-policy/    @kody
+/crates/versionx-mcp/       @kody
+SECURITY.md                 @kody
+.github/workflows/release.yml @kody

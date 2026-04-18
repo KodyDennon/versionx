@@ -1,0 +1,47 @@
+name: Bug report
+description: Something in Versionx is broken
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the report. Please fill out the following so we can reproduce the issue.
+  - type: input
+    id: version
+    attributes:
+      label: Versionx version
+      description: Output of `versionx --version`.
+      placeholder: "versionx 0.1.0"
+    validations:
+      required: true
+  - type: input
+    id: platform
+    attributes:
+      label: Platform
+      placeholder: "macOS 15.2 aarch64 / Ubuntu 24.04 x86_64 / Windows 11 x86_64"
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: Minimal repro. Include commands, config, fixture repo if possible.
+      placeholder: |
+        1. `versionx init`
+        2. `versionx sync`
+        3. …
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+      description: Include error messages. Run with `VERSIONX_LOG=debug` and attach output if possible.
+    validations:
+      required: true

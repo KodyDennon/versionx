@@ -1,0 +1,25 @@
+[package]
+name = "versionx-git"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+readme.workspace = true
+description = "Git operations: gix for reads, git2 for writes, behind a single trait."
+
+[lints]
+workspace = true
+
+[dependencies]
+async-trait.workspace = true
+tokio = { workspace = true }
+thiserror.workspace = true
+camino.workspace = true
+tracing.workspace = true
+gix.workspace = true
+git2.workspace = true
+versionx-events.workspace = true
+
