@@ -1,10 +1,17 @@
-//! Versionx core library — intent-driven planner, shared by all frontends.
+//! Versionx core library — the intent-driven planner shared by every frontend.
 //!
-//! Part of the Versionx workspace. See the workspace README and `docs/spec/` for architecture.
-//!
-//! Status: scaffold (crate is stubbed for 0.1.0 implementation).
+//! See `docs/spec/01-architecture-overview.md §3` for the library boundary.
+//! Frontends (`versionx-cli`, `versionx-mcp`, `versionx-daemon`, …) never
+//! call git, adapters, or ecosystem tools directly. They call functions in
+//! this crate, which orchestrates the real work.
 
 #![deny(unsafe_code)]
+
+pub mod commands;
+pub mod error;
+
+pub use error::{CoreError, CoreResult};
+pub use versionx_events::{Event, EventBus, EventSender, Level};
 
 /// Crate version as declared in `Cargo.toml`.
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");

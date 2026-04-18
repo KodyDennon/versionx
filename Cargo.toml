@@ -38,7 +38,7 @@ edition = "2024"
 rust-version = "1.95"
 authors = ["Kody <kodydennon@gmail.com>"]
 license = "Apache-2.0"
-repository = "https://github.com/kody/versionx"
+repository = "https://github.com/KodyDennon/versionx"
 homepage = "https://versionx.dev"
 documentation = "https://docs.rs/versionx"
 readme = "README.md"
@@ -189,6 +189,12 @@ needless_pass_by_value = "allow"
 cast_possible_truncation = "allow"
 cast_precision_loss = "allow"
 cast_sign_loss = "allow"
+# Subjective / noisy — re-enable per-crate if desired.
+too_long_first_doc_paragraph = "allow"
+items_after_statements = "allow"
+trivially_copy_pass_by_ref = "allow"
+zero_sized_map_values = "allow"
+literal_string_with_formatting_args = "allow"
 
 # Profile tuning
 [profile.release]

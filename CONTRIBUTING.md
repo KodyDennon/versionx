@@ -5,7 +5,7 @@ Thanks for considering a contribution! Versionx is early-stage — the most valu
 ## Quick start
 
 ```bash
-git clone https://github.com/kody/versionx
+git clone https://github.com/KodyDennon/versionx
 cd versionx
 cargo check --workspace
 cargo test --workspace
@@ -13,7 +13,7 @@ cargo xtask ci        # runs fmt + clippy + tests as CI would
 ```
 
 Prereqs:
-- Rust 1.88+ (pinned in `rust-toolchain.toml`; `rustup` picks it up automatically).
+- Rust 1.95+ (pinned in `rust-toolchain.toml`; `rustup` picks it up automatically).
 - Git.
 - A reasonably recent `cargo-deny` and `cargo-nextest` if you want to run the full CI locally: `cargo install cargo-deny cargo-nextest`.
 

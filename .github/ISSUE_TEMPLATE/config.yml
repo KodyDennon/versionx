@@ -1,8 +1,8 @@
 blank_issues_enabled: false
 contact_links:
   - name: Security vulnerability
-    url: https://github.com/kody/versionx/security/advisories/new
+    url: https://github.com/KodyDennon/versionx/security/advisories/new
     about: Private vulnerability reporting. Do not use public issues.
   - name: Discussions
-    url: https://github.com/kody/versionx/discussions
+    url: https://github.com/KodyDennon/versionx/discussions
     about: For questions, design feedback, and open-ended conversation.

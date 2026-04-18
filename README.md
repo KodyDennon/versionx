@@ -34,8 +34,8 @@ The full vision specification lives in [`docs/spec/`](docs/spec/):
 ## Development
 
 ```bash
-# Prereqs: rustc 1.88+ (pinned in rust-toolchain.toml), git.
-git clone https://github.com/kody/versionx
+# Prereqs: rustc 1.95+ (pinned in rust-toolchain.toml), git.
+git clone https://github.com/KodyDennon/versionx
 cd versionx
 cargo check --workspace
 cargo test --workspace

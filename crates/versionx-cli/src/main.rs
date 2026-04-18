@@ -12,10 +12,12 @@
 use std::io::{self, Write};
 use std::process::ExitCode;
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 use camino::Utf8PathBuf;
 use clap::{Parser, Subcommand, ValueEnum};
 use tracing_subscriber::{EnvFilter, fmt, prelude::*};
+use versionx_core::EventBus;
+use versionx_core::commands::init as core_init;
 
 /// Command-line interface for Versionx, the polyglot version manager +
 /// release orchestrator.
@@ -238,15 +240,25 @@ enum McpCommand {
 }
 
 fn main() -> ExitCode {
-    // Initialize tracing early so parse errors benefit from it too.
-    let env_filter = EnvFilter::try_from_env("VERSIONX_LOG")
-        .unwrap_or_else(|_| EnvFilter::new("versionx=info,warn"));
-    tracing_subscriber::registry()
-        .with(env_filter)
-        .with(fmt::layer().with_target(false).without_time())
-        .init();
-
     let cli = Cli::parse();
+
+    // Default filter: warn only. `-v` promotes to info, `-vv` to debug,
+    // `-vvv` to trace. Always overridable via `VERSIONX_LOG`.
+    let base = match cli.verbose {
+        0 => "warn",
+        1 => "versionx=info,warn",
+        2 => "versionx=debug,warn",
+        _ => "trace",
+    };
+    let env_filter =
+        EnvFilter::try_from_env("VERSIONX_LOG").unwrap_or_else(|_| EnvFilter::new(base));
+
+    // Log format depends on output mode: `ndjson` outputs events as JSON lines
+    // to stderr; everything else gets pretty text. Always to stderr so it
+    // never mixes with structured stdout output.
+    let fmt_layer = fmt::layer().with_target(false).without_time().with_writer(std::io::stderr);
+
+    let _ = tracing_subscriber::registry().with(env_filter).with(fmt_layer).try_init();
 
     if cli.help_json {
         return emit_help_json();
@@ -270,7 +282,7 @@ fn dispatch(cli: Cli) -> Result<ExitCode> {
     };
 
     match command {
-        Command::Init(_) => not_yet("init", "0.1.0 (Phase 1 of the roadmap)"),
+        Command::Init(args) => run_init(&args, cli.cwd.as_deref(), cli.output),
         Command::Sync(_) => not_yet("sync", "0.1.0"),
         Command::Verify => not_yet("verify", "0.1.0"),
         Command::Status => status_stub(cli.output),
@@ -283,6 +295,114 @@ fn dispatch(cli: Cli) -> Result<ExitCode> {
         Command::Release(_) => not_yet("release", "0.4.0"),
         Command::Policy(_) => not_yet("policy", "0.5.0"),
         Command::Mcp(_) => not_yet("mcp", "0.6.0"),
+    }
+}
+
+/// Resolve the working directory for a command. Uses `--cwd` if given,
+/// falling back to the process cwd. Errors if the path is not UTF-8
+/// (matches our `camino`-everywhere policy).
+fn resolve_cwd(flag: Option<&camino::Utf8Path>) -> Result<Utf8PathBuf> {
+    if let Some(p) = flag {
+        return Ok(p.to_path_buf());
+    }
+    let current = std::env::current_dir().context("determining current directory")?;
+    Utf8PathBuf::from_path_buf(current)
+        .map_err(|p| anyhow::anyhow!("current directory is not valid UTF-8: {}", p.display()))
+}
+
+fn run_init(
+    args: &InitArgs,
+    cwd: Option<&camino::Utf8Path>,
+    output: OutputFormat,
+) -> Result<ExitCode> {
+    let root = resolve_cwd(cwd)?;
+
+    // Build a temporary event bus + subscribe to stream lines to stderr
+    // in ndjson mode. For 0.1.0 all subsystems run in-process (no daemon),
+    // so the bus lives only for this command.
+    let bus = EventBus::new();
+
+    let opts = core_init::InitOptions { root, force: args.force, dry_run: false };
+
+    let outcome = match core_init::init(&opts, &bus.sender()) {
+        Ok(o) => o,
+        Err(err) => {
+            // Typed renderer so we can return sensible exit codes.
+            return Ok(render_init_error(&err, output));
+        }
+    };
+
+    match output {
+        OutputFormat::Json | OutputFormat::Ndjson => {
+            let mut stdout = io::stdout().lock();
+            serde_json::to_writer(&mut stdout, &outcome)?;
+            stdout.write_all(b"\n")?;
+        }
+        OutputFormat::Human => {
+            if outcome.created {
+                println!("Created {}", outcome.path);
+            } else if outcome.overwrote {
+                println!("Overwrote {}", outcome.path);
+            }
+            if outcome.ecosystems.is_empty() {
+                println!("  (no ecosystems detected — configure manually)");
+            } else {
+                println!("  Ecosystems: {}", outcome.ecosystems.join(", "));
+            }
+            if !outcome.runtimes.is_empty() {
+                println!("  Runtimes:");
+                for (tool, version) in &outcome.runtimes {
+                    println!("    {tool} = {version}");
+                }
+            }
+            if !outcome.signals.is_empty() {
+                println!("  Detected from:");
+                for sig in &outcome.signals {
+                    println!("    - {sig}");
+                }
+            }
+        }
+    }
+
+    Ok(ExitCode::from(0))
+}
+
+fn render_init_error(err: &versionx_core::CoreError, output: OutputFormat) -> ExitCode {
+    use versionx_core::CoreError as E;
+
+    // Exit code map: 1 = user error, 2 = config error, 3 = no ecosystems, 4 = i/o.
+    let code = match err {
+        E::ConfigAlreadyExists { .. } | E::NoConfig { .. } => 1,
+        E::Config(_) => 2,
+        E::NoEcosystemsDetected { .. } => 3,
+        E::Io { .. } | E::Serialize(_) => 4,
+    };
+
+    match output {
+        OutputFormat::Json | OutputFormat::Ndjson => {
+            let payload = serde_json::json!({
+                "error": format!("{err}"),
+                "kind": error_kind(err),
+                "exit_code": code,
+            });
+            eprintln!("{payload}");
+        }
+        OutputFormat::Human => {
+            eprintln!("versionx init: {err}");
+        }
+    }
+    ExitCode::from(code)
+}
+
+const fn error_kind(err: &versionx_core::CoreError) -> &'static str {
+    use versionx_core::CoreError as E;
+    match err {
+        E::NoConfig { .. } => "no_config",
+        E::ConfigAlreadyExists { .. } => "config_already_exists",
+        E::NoEcosystemsDetected { .. } => "no_ecosystems_detected",
+        E::Config(_) => "config",
+        E::Io { .. } => "io",
+        E::Serialize(_) => "serialize",
     }
 }
 
