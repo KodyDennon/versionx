@@ -183,12 +183,18 @@ pub trait RuntimeInstaller: Send + Sync {
 /// Resolve the path to a binary inside an [`Installation`], following OS
 /// conventions: `bin/<name>` on Unix, `<name>.exe` at the install root on Windows
 /// for tools like Node that bundle everything at the top level.
+///
+/// Uses forward slashes regardless of host OS — the resulting path is
+/// portable and most Windows APIs accept it. We avoid `Utf8Path::join`
+/// here because it inserts the platform separator (backslash on
+/// Windows), which would make the same compiled binary produce
+/// different paths depending on where it's run.
 #[must_use]
 pub fn bin_path(install: &Utf8Path, name: &str, platform: Platform) -> Utf8PathBuf {
     if matches!(platform.os, Os::Windows) {
-        install.join(format!("{name}.exe"))
+        Utf8PathBuf::from(format!("{install}/{name}.exe"))
     } else {
-        install.join("bin").join(name)
+        Utf8PathBuf::from(format!("{install}/bin/{name}"))
     }
 }
 

@@ -111,11 +111,16 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           key: cross-${{ matrix.target }}
-      - name: Install zig + cargo-zigbuild
+      - name: Install zig
+        if: startsWith(matrix.runner, 'ubuntu') || startsWith(matrix.runner, 'macos')
+        uses: mlugg/setup-zig@v1
+        with:
+          version: 0.13.0
+      - name: Install cargo-zigbuild
         if: startsWith(matrix.runner, 'ubuntu') || startsWith(matrix.runner, 'macos')
         uses: taiki-e/install-action@v2
         with:
-          tool: zig,cargo-zigbuild
+          tool: cargo-zigbuild
       - name: Build (zig)
         if: startsWith(matrix.runner, 'ubuntu') || startsWith(matrix.runner, 'macos')
         run: cargo zigbuild --workspace --target ${{ matrix.target }}

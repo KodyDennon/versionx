@@ -169,6 +169,11 @@ mod tests {
         assert!(!pid.is_file());
     }
 
+    // Windows uses the named-pipe `first_pipe_instance = true` flag in
+    // `transport` for mutual exclusion (see `acquire_os_lock` above —
+    // it's a no-op on Windows). The pidfile-level test only covers
+    // the Unix flock path.
+    #[cfg(unix)]
     #[test]
     fn second_acquire_blocks() {
         let tmp = tempfile::tempdir().unwrap();

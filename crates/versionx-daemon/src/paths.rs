@@ -68,12 +68,19 @@ impl DaemonPaths {
         Ok(())
     }
 
-    /// Windows named-pipe path derived from the run dir + user name.
-    /// Format: `\\.\pipe\versiond_<user>`.
+    /// Windows named-pipe path. Includes a short hash of the home dir
+    /// so two daemons with different `VERSIONX_HOME`s (e.g. tests run
+    /// in parallel under separate tempdirs) don't collide on the same
+    /// pipe — `first_pipe_instance(true)` would otherwise reject the
+    /// second binder with "Access is denied".
+    ///
+    /// Format: `\\.\pipe\versiond_<user>_<8hex>`.
     #[cfg(windows)]
     pub fn windows_pipe_name(&self) -> String {
         let user = std::env::var("USERNAME").unwrap_or_else(|_| "default".into());
-        format!(r"\\.\pipe\versiond_{user}")
+        let hash = blake3::hash(self.home.as_str().as_bytes());
+        let short = &hash.to_hex().to_string()[..8];
+        format!(r"\\.\pipe\versiond_{user}_{short}")
     }
 }
 
