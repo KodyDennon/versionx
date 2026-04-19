@@ -115,7 +115,7 @@ jobs:
         if: startsWith(matrix.runner, 'ubuntu') || startsWith(matrix.runner, 'macos')
         uses: taiki-e/install-action@v2
         with:
-          tool: cargo-zigbuild
+          tool: zig,cargo-zigbuild
       - name: Build (zig)
         if: startsWith(matrix.runner, 'ubuntu') || startsWith(matrix.runner, 'macos')
         run: cargo zigbuild --workspace --target ${{ matrix.target }}

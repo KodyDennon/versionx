@@ -19,17 +19,16 @@ db-path = "~/.cargo/advisory-db"
 db-urls = ["https://github.com/rustsec/advisory-db"]
 yanked = "deny"
 # Advisories we've reviewed and accept:
-# - RUSTSEC-2025-0098 (gix-date TimeBuf::as_str non-utf8): read-only code
+# - RUSTSEC-2025-0140 (gix-date TimeBuf::as_str non-utf8 — the
+#   renumbered version of the withdrawn 2025-0098): read-only code
 #   path in our usage; we never pass user-controlled bytes through it.
-# - RUSTSEC-2025-0021 / 0022 / 0023 (gitoxide SHA-1 collision detection):
-#   we consume already-committed SHAs; collision mitigation is the caller's
+# - RUSTSEC-2025-0021 (gitoxide SHA-1 collision detection): we consume
+#   already-committed SHAs; collision mitigation is the caller's
 #   responsibility. Revisit if gitoxide ships a detecting backend.
 ignore = [
     # gix/gitoxide advisories — read-only + trust-on-commit usage.
-    "RUSTSEC-2025-0098",
+    "RUSTSEC-2025-0140",
     "RUSTSEC-2025-0021",
-    "RUSTSEC-2025-0022",
-    "RUSTSEC-2025-0023",
     # Unmaintained transitive deps — tracked upstream, no user-facing impact.
     "RUSTSEC-2024-0384", # instant — unmaintained
     "RUSTSEC-2024-0436", # paste — unmaintained
