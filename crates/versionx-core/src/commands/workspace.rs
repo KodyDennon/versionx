@@ -180,25 +180,17 @@ fn build_graph(ws: &Workspace) -> CoreResult<ComponentGraph> {
     })
 }
 
-/// Load last-released content hashes from the workspace lockfile.
-/// Uses a `components.<id>.content_hash` convention under the normal
-/// lockfile schema — when absent, every component is reported as dirty
-/// (because `last_hash = None`).
-fn load_last_hashes(root: &camino::Utf8Path) -> indexmap::IndexMap<String, String> {
+/// Load last-released content hashes from the workspace lockfile's
+/// `[components.<id>]` table. When the lockfile is missing or the
+/// component has never been released, we simply return an empty map
+/// entry — callers see `last_hash = None` and treat the component as
+/// dirty, which is the safe default.
+pub fn load_last_hashes(root: &camino::Utf8Path) -> indexmap::IndexMap<String, String> {
     let lockfile_path = root.join("versionx.lock");
     let Ok(lock) = Lockfile::load(&lockfile_path) else {
         return indexmap::IndexMap::new();
     };
-    let mut out = indexmap::IndexMap::new();
-    // For 0.1 we piggy-back on the existing schema: `[runtimes.<id>].sha256`
-    // is reused as a carrier when the lockfile version bumps we'll move to
-    // a dedicated `[components.<id>].content_hash` field. For now we just
-    // look for an optional `components` table emitted by the bump command
-    // (not yet shipped). Returning an empty map is safe — it just means
-    // everything reports dirty.
-    drop(lock);
-    let _ = &mut out;
-    out
+    lock.components.iter().map(|(id, c)| (id.clone(), c.content_hash.clone())).collect()
 }
 
 #[cfg(test)]

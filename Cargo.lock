@@ -5060,6 +5060,7 @@ dependencies = [
  "anyhow",
  "assert_cmd",
  "camino",
+ "chrono",
  "clap",
  "clap_complete",
  "indexmap",
@@ -5071,7 +5072,9 @@ dependencies = [
  "tracing-subscriber",
  "versionx-core",
  "versionx-daemon",
+ "versionx-release",
  "versionx-sdk",
+ "versionx-workspace",
  "which",
 ]
 
@@ -5281,7 +5284,9 @@ dependencies = [
  "blake3",
  "camino",
  "chrono",
+ "git2",
  "hex",
+ "indexmap",
  "insta",
  "proptest",
  "regex",
@@ -5291,11 +5296,14 @@ dependencies = [
  "tempfile",
  "thiserror 2.0.18",
  "tokio",
+ "toml",
  "toml_edit",
  "tracing",
  "versionx-config",
  "versionx-events",
+ "versionx-lockfile",
  "versionx-state",
+ "versionx-workspace",
 ]
 
 [[package]]

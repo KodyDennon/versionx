@@ -35,8 +35,11 @@ camino.workspace = true
 versionx-core.workspace = true
 versionx-sdk.workspace = true
 versionx-daemon.workspace = true
+versionx-release.workspace = true
+versionx-workspace.workspace = true
 indexmap.workspace = true
 which.workspace = true
+chrono.workspace = true
 
 [dev-dependencies]
 assert_cmd = { workspace = true }

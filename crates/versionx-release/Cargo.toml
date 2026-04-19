@@ -30,6 +30,11 @@ hex.workspace = true
 versionx-events.workspace = true
 versionx-config.workspace = true
 versionx-state.workspace = true
+versionx-workspace.workspace = true
+versionx-lockfile.workspace = true
+indexmap = { workspace = true }
+toml = { workspace = true }
+git2 = { workspace = true }
 
 [dev-dependencies]
 tempfile.workspace = true

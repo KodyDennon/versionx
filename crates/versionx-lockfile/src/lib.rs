@@ -38,6 +38,13 @@ pub struct Lockfile {
 
     #[serde(default, skip_serializing_if = "IndexMap::is_empty")]
     pub links: IndexMap<String, LockedLink>,
+
+    /// Per-component release baselines. Populated by `versionx release apply`
+    /// after a successful release so subsequent `versionx bump` calls can
+    /// compare against the last-released hash + version instead of treating
+    /// every component as dirty.
+    #[serde(default, skip_serializing_if = "IndexMap::is_empty")]
+    pub components: IndexMap<String, LockedComponent>,
 }
 
 /// One resolved runtime (`[runtimes.node]` in the lockfile).
@@ -78,6 +85,28 @@ pub struct LockedLink {
     pub kind: String,
     pub commit: String,
     pub resolved_url: String,
+}
+
+/// Per-component release baseline (`[components.<id>]`).
+///
+/// Updated only by `versionx release apply`. `content_hash` captures the
+/// BLAKE3 of the component at release time — `versionx bump` diffs it
+/// against the current hash to decide dirtiness.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct LockedComponent {
+    /// Component version at release time (e.g. `"1.2.3"`).
+    pub version: String,
+    /// BLAKE3 content hash captured at release time, prefixed `"blake3:"`.
+    pub content_hash: String,
+    /// Timestamp the release was applied. Informational only.
+    pub released_at: DateTime<Utc>,
+    /// Git tag name that was created for this release, when applicable.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tag: Option<String>,
+    /// Commit SHA that landed the release. Useful for debugging + audit.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub commit: Option<String>,
 }
 
 #[derive(Debug, Error)]
@@ -121,6 +150,7 @@ impl Lockfile {
             runtimes: IndexMap::new(),
             ecosystems: IndexMap::new(),
             links: IndexMap::new(),
+            components: IndexMap::new(),
         }
     }
 
@@ -254,5 +284,26 @@ mod tests {
     #[test]
     fn sha256_64_hex_chars() {
         assert_eq!(sha256_hex(b"").len(), 64);
+    }
+
+    #[test]
+    fn components_round_trip() {
+        let mut lock = Lockfile::new("blake3:x");
+        lock.components.insert(
+            "core".into(),
+            LockedComponent {
+                version: "1.2.3".into(),
+                content_hash: "blake3:abc".into(),
+                released_at: Utc::now(),
+                tag: Some("v1.2.3".into()),
+                commit: Some("deadbeef".into()),
+            },
+        );
+        let rendered = lock.to_toml_string().unwrap();
+        let reread = Lockfile::from_str_at(&rendered, Utf8Path::new("<test>")).unwrap();
+        let c = reread.components.get("core").unwrap();
+        assert_eq!(c.version, "1.2.3");
+        assert_eq!(c.content_hash, "blake3:abc");
+        assert_eq!(c.tag.as_deref(), Some("v1.2.3"));
     }
 }

@@ -137,6 +137,10 @@ enum Command {
     #[command(subcommand)]
     Release(ReleaseCommand),
 
+    /// Manage stored release plans under `.versionx/plans/`.
+    #[command(subcommand)]
+    Plan(PlanCommand),
+
     /// Policy authoring and evaluation.
     #[command(subcommand)]
     Policy(PolicyCommand),
@@ -258,21 +262,38 @@ enum DaemonCommand {
 #[derive(Subcommand, Debug)]
 enum ReleaseCommand {
     /// Compute a release plan without executing it.
-    Propose,
+    Propose {
+        /// Strategy: `conventional` (default), `pr-title`, `manual`.
+        #[arg(long, default_value = "conventional")]
+        strategy: String,
+        /// Override PR title (otherwise harvested from git).
+        #[arg(long)]
+        pr_title: Option<String>,
+    },
+    /// Show a single plan by id.
+    Show { plan_id: String },
+    /// List every plan under .versionx/plans/.
+    List,
     /// Approve a previously-proposed plan by id.
     Approve { plan_id: String },
-    /// Apply an approved release plan.
+    /// Apply an approved release plan (local-only — push is a future flag).
     Apply {
-        /// Plan id to apply. If omitted, the latest approved plan is used.
-        plan_id: Option<String>,
-        /// Push tags and release commits after applying locally.
-        /// In non-TTY contexts `--push` or `--no-push` is required.
+        /// Plan id to apply.
+        plan_id: String,
+        /// Allow applying even when the working tree has unrelated changes.
         #[arg(long)]
-        push: bool,
-        /// Explicitly skip pushing (the inverse of `--push`).
-        #[arg(long, conflicts_with = "push")]
-        no_push: bool,
+        allow_dirty: bool,
     },
+}
+
+#[derive(Subcommand, Debug)]
+enum PlanCommand {
+    /// List every plan under `.versionx/plans/`.
+    List,
+    /// Show a plan body by id.
+    Show { plan_id: String },
+    /// Delete all expired plans.
+    Expire,
 }
 
 #[derive(Subcommand, Debug)]
@@ -349,7 +370,8 @@ fn dispatch(cli: Cli) -> Result<ExitCode> {
         Command::Bump => run_bump(cli.cwd.as_deref(), cli.output),
         Command::Daemon(sub) => block_on(run_daemon(sub, cli.output)),
         Command::Tui => run_tui(cli.cwd.as_deref()),
-        Command::Release(_) => not_yet("release", "0.4.0"),
+        Command::Release(sub) => run_release(sub, cli.cwd.as_deref(), cli.output),
+        Command::Plan(sub) => run_plan(sub, cli.cwd.as_deref(), cli.output),
         Command::Policy(_) => not_yet("policy", "0.5.0"),
         Command::Mcp(_) => not_yet("mcp", "0.6.0"),
     }
@@ -791,12 +813,8 @@ fn run_bump(cwd: Option<&camino::Utf8Path>, output: OutputFormat) -> Result<Exit
     use versionx_core::commands::bump;
 
     let root = resolve_cwd(cwd)?;
-    // The 0.2 proposal operates on an empty last-hashes map (every
-    // component shows as dirty) when no state is stored yet. Once the
-    // lockfile carries `components.<id>.content_hash` (0.4), we'll load
-    // it here and pass it in.
-    let opts =
-        bump::BumpOptions { root, last_hashes: indexmap::IndexMap::new(), groups: Vec::new() };
+    let last_hashes = versionx_core::commands::workspace::load_last_hashes(&root);
+    let opts = bump::BumpOptions { root, last_hashes, groups: Vec::new() };
     let outcome = match bump::propose(&opts) {
         Ok(o) => o,
         Err(err) => return Ok(render_core_error(&err, output, "bump")),
@@ -975,6 +993,243 @@ async fn tail_log(path: &camino::Utf8Path, tail: usize, follow: bool) -> Result<
         }
         offset = len;
     }
+}
+
+fn run_release(
+    sub: ReleaseCommand,
+    cwd: Option<&camino::Utf8Path>,
+    output: OutputFormat,
+) -> Result<ExitCode> {
+    use versionx_release::{ReleasePlan, plan as plan_mod, propose as propose_mod};
+    let root = resolve_cwd(cwd)?;
+    let plans_dir = plan_mod::plans_dir(&root);
+
+    match sub {
+        ReleaseCommand::Propose { strategy, pr_title } => {
+            let last = versionx_core::commands::workspace::load_last_hashes(&root);
+            let input = propose_mod::ProposeInput {
+                strategy,
+                commit_messages: collect_commit_messages(&root),
+                pr_title,
+                groups: Vec::new(),
+                ttl: None,
+            };
+            let plan = match propose_mod::propose(&root, &last, &input) {
+                Ok(p) => p,
+                Err(err) => return bail_with(output, "release propose", &err.to_string()),
+            };
+            let saved_to = plan.save(&plans_dir).context("writing plan")?;
+            emit_plan(&plan, Some(&saved_to), output)
+        }
+        ReleaseCommand::Show { plan_id } => {
+            let plan = ReleasePlan::load_by_id(&plans_dir, &plan_id)
+                .with_context(|| format!("loading plan {plan_id}"))?;
+            emit_plan(&plan, None, output)
+        }
+        ReleaseCommand::List => {
+            let plans = plan_mod::list_plans(&plans_dir).context("listing plans")?;
+            emit_plan_list(&plans, output)
+        }
+        ReleaseCommand::Approve { plan_id } => {
+            let mut plan = ReleasePlan::load_by_id(&plans_dir, &plan_id)
+                .with_context(|| format!("loading plan {plan_id}"))?;
+            plan.approve();
+            plan.save(&plans_dir).context("writing approved plan")?;
+            emit_msg(
+                output,
+                &format!("approved {}", plan.plan_id),
+                serde_json::json!({"approved": plan.plan_id}),
+            )?;
+            Ok(ExitCode::from(0))
+        }
+        ReleaseCommand::Apply { plan_id, allow_dirty } => {
+            let plan = ReleasePlan::load_by_id(&plans_dir, &plan_id)
+                .with_context(|| format!("loading plan {plan_id}"))?;
+            let input = versionx_release::ApplyInput {
+                commit_messages: collect_commit_messages(&root),
+                enforce_clean_tree: !allow_dirty,
+                ..versionx_release::ApplyInput::new(root.clone())
+            };
+            let outcome = match versionx_release::apply(&plan, &input) {
+                Ok(o) => o,
+                Err(err) => return bail_with(output, "release apply", &err.to_string()),
+            };
+            emit_apply_outcome(&outcome, output)
+        }
+    }
+}
+
+fn run_plan(
+    sub: PlanCommand,
+    cwd: Option<&camino::Utf8Path>,
+    output: OutputFormat,
+) -> Result<ExitCode> {
+    use versionx_release::{ReleasePlan, plan as plan_mod};
+    let root = resolve_cwd(cwd)?;
+    let plans_dir = plan_mod::plans_dir(&root);
+
+    match sub {
+        PlanCommand::List => {
+            let plans = plan_mod::list_plans(&plans_dir).context("listing plans")?;
+            emit_plan_list(&plans, output)
+        }
+        PlanCommand::Show { plan_id } => {
+            let plan = ReleasePlan::load_by_id(&plans_dir, &plan_id)
+                .with_context(|| format!("loading plan {plan_id}"))?;
+            emit_plan(&plan, None, output)
+        }
+        PlanCommand::Expire => {
+            let removed =
+                plan_mod::expire_plans(&plans_dir, chrono::Utc::now()).context("expiring plans")?;
+            emit_msg(
+                output,
+                &format!("expired {} plans", removed.len()),
+                serde_json::json!({"expired": removed}),
+            )?;
+            Ok(ExitCode::from(0))
+        }
+    }
+}
+
+fn emit_plan(
+    plan: &versionx_release::ReleasePlan,
+    saved_to: Option<&camino::Utf8Path>,
+    output: OutputFormat,
+) -> Result<ExitCode> {
+    match output {
+        OutputFormat::Json | OutputFormat::Ndjson => {
+            let payload = serde_json::json!({
+                "plan_id": plan.plan_id,
+                "workspace_root": plan.workspace_root,
+                "pre_requisite_hash": plan.pre_requisite_hash,
+                "created_at": plan.created_at,
+                "expires_at": plan.expires_at,
+                "approved": plan.approved,
+                "strategy": plan.strategy,
+                "bumps": plan.bumps,
+                "saved_to": saved_to.map(ToString::to_string),
+            });
+            let mut stdout = io::stdout().lock();
+            serde_json::to_writer(&mut stdout, &payload)?;
+            stdout.write_all(b"\n")?;
+        }
+        OutputFormat::Human => {
+            println!("plan_id: {}", plan.plan_id);
+            println!("strategy: {}", plan.strategy);
+            println!("approved: {}", plan.approved);
+            println!("expires_at: {}", plan.expires_at);
+            if let Some(p) = saved_to {
+                println!("saved_to: {p}");
+            }
+            if plan.bumps.is_empty() {
+                println!("no bumps proposed — workspace is clean.");
+            } else {
+                println!("proposed bumps ({}):", plan.bumps.len());
+                for b in &plan.bumps {
+                    let from = b.from.as_deref().unwrap_or("—");
+                    println!("  {:<32} {from} -> {:<10} [{}]", b.id, b.to, b.level);
+                }
+            }
+        }
+    }
+    Ok(ExitCode::from(0))
+}
+
+fn emit_plan_list(
+    plans: &[versionx_release::ReleasePlan],
+    output: OutputFormat,
+) -> Result<ExitCode> {
+    match output {
+        OutputFormat::Json | OutputFormat::Ndjson => {
+            let summary: Vec<_> = plans
+                .iter()
+                .map(|p| {
+                    serde_json::json!({
+                        "plan_id": p.plan_id,
+                        "created_at": p.created_at,
+                        "expires_at": p.expires_at,
+                        "approved": p.approved,
+                        "strategy": p.strategy,
+                        "bump_count": p.bumps.len(),
+                    })
+                })
+                .collect();
+            let mut stdout = io::stdout().lock();
+            serde_json::to_writer(&mut stdout, &summary)?;
+            stdout.write_all(b"\n")?;
+        }
+        OutputFormat::Human => {
+            if plans.is_empty() {
+                println!("no plans found.");
+            } else {
+                for p in plans {
+                    let flag = if p.approved { "✓" } else { "·" };
+                    println!(
+                        "  {flag} {} ({} bumps, expires {})",
+                        p.plan_id,
+                        p.bumps.len(),
+                        p.expires_at
+                    );
+                }
+            }
+        }
+    }
+    Ok(ExitCode::from(0))
+}
+
+fn emit_apply_outcome(
+    outcome: &versionx_release::ApplyOutcome,
+    output: OutputFormat,
+) -> Result<ExitCode> {
+    match output {
+        OutputFormat::Json | OutputFormat::Ndjson => {
+            let mut stdout = io::stdout().lock();
+            serde_json::to_writer(&mut stdout, outcome)?;
+            stdout.write_all(b"\n")?;
+        }
+        OutputFormat::Human => {
+            println!("applied plan {}", outcome.plan_id);
+            println!("commit: {}", outcome.commit);
+            println!("tags: {}", outcome.tags.join(", "));
+            for b in &outcome.bumped {
+                let from = b.from.as_deref().unwrap_or("—");
+                println!("  {}: {from} -> {} ({})", b.id, b.to, b.tag);
+            }
+        }
+    }
+    Ok(ExitCode::from(0))
+}
+
+fn bail_with(output: OutputFormat, op: &str, message: &str) -> Result<ExitCode> {
+    match output {
+        OutputFormat::Json | OutputFormat::Ndjson => {
+            let payload = serde_json::json!({"op": op, "error": message});
+            let mut stdout = io::stdout().lock();
+            serde_json::to_writer(&mut stdout, &payload)?;
+            stdout.write_all(b"\n")?;
+        }
+        OutputFormat::Human => {
+            eprintln!("versionx {op}: {message}");
+        }
+    }
+    Ok(ExitCode::from(1))
+}
+
+/// Collect commit messages since the most recent release tag (if any).
+/// Falls back to the last N commits for first releases / orphan refs.
+fn collect_commit_messages(root: &camino::Utf8Path) -> Vec<String> {
+    // git2 wouldn't give us cleaner output than shelling out here, and
+    // shelling out keeps the CLI binary smaller. We format with
+    // `--pretty=%B` to get full commit bodies, separated by a NUL byte.
+    let output = std::process::Command::new("git")
+        .args(["-C", root.as_str(), "log", "-n", "100", "--pretty=%B%x00"])
+        .output();
+    let Ok(out) = output else { return Vec::new() };
+    if !out.status.success() {
+        return Vec::new();
+    }
+    let text = String::from_utf8_lossy(&out.stdout);
+    text.split('\0').map(str::trim).filter(|s| !s.is_empty()).map(str::to_string).collect()
 }
 
 fn run_tui(cwd: Option<&camino::Utf8Path>) -> Result<ExitCode> {
