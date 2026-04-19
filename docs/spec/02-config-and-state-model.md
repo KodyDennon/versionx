@@ -51,7 +51,7 @@ DATABASE_URL = "${SECRET_DB_URL}"               # interpolated at load time
 
 # === Runtime pins (the mise/asdf piece) ===
 [runtimes]
-node = "20.11.1"                                # exact or "20", "^20", "lts"
+node = "22.12.0"                                # exact or "20", "^20", "lts"
 pnpm = "8.15.0"                                 # Versionx installs this directly (no corepack)
 python = "3.12.2"
 rust = "1.78.0"
@@ -219,7 +219,7 @@ versionx_version = "1.0.0"
 config_hash = "blake3:a7f3b2..."                # BLAKE3 for internal fast keys
 
 [runtimes.node]
-version = "20.11.1"
+version = "22.12.0"
 source = "nodejs.org"
 sha256 = "e3c6a3..."                            # SHA-256 for supply-chain interop (SBOM/sigstore)
 

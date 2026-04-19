@@ -224,7 +224,7 @@ mod tests {
         lock.runtimes.insert(
             "node".into(),
             LockedRuntime {
-                version: "20.11.1".into(),
+                version: "22.12.0".into(),
                 source: "nodejs.org".into(),
                 sha256: Some("deadbeef".into()),
                 install_path: None,
@@ -234,7 +234,7 @@ mod tests {
         assert!(rendered.starts_with("# DO NOT EDIT"));
         let parsed = Lockfile::from_str_at(&rendered, Utf8Path::new("<test>")).unwrap();
         assert_eq!(parsed.config_hash, "blake3:abcd");
-        assert_eq!(parsed.runtimes["node"].version, "20.11.1");
+        assert_eq!(parsed.runtimes["node"].version, "22.12.0");
     }
 
     #[test]

@@ -228,9 +228,9 @@ mod tests {
     fn reads_plain_string_version() {
         use std::io::Write;
         let tmp = tempfile::NamedTempFile::new().unwrap();
-        writeln!(&tmp, "[runtimes]\nnode = \"20.11.1\"").unwrap();
+        writeln!(&tmp, "[runtimes]\nnode = \"22.12.0\"").unwrap();
         let v = read_tool_version(tmp.path(), "node").unwrap().unwrap();
-        assert_eq!(v, "20.11.1");
+        assert_eq!(v, "22.12.0");
     }
 
     #[test]

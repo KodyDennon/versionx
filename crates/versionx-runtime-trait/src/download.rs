@@ -129,7 +129,7 @@ pub fn verify_sha256(path: &Utf8Path, expected: &str) -> InstallerResult<String>
 /// `dest` exists + is empty; extraction creates it if needed.
 ///
 /// Honors a `strip_components` count to drop N leading path segments from
-/// every archive entry (Node archives have a `node-v20.11.1-linux-x64/` root).
+/// every archive entry (Node archives have a `node-v22.12.0-linux-x64/` root).
 pub fn extract_tar(
     archive: &Utf8Path,
     dest: &Utf8Path,

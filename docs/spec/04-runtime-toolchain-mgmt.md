@@ -73,7 +73,7 @@ pub struct InstallerContext {
 }
 
 pub struct ResolvedVersion {
-    pub version: String,                // semantic: "20.11.1"
+    pub version: String,                // semantic: "22.12.0"
     pub channel: Option<String>,        // "lts", "stable", "nightly-2024-04-18"
     pub source: String,                 // "nodejs.org", "python-build-standalone", "rv"
     pub sha256: Option<String>,         // expected checksum (SHA-256 for interop)
@@ -128,7 +128,7 @@ Shell-hook activation prepends this dir to PATH once per login:
 ### 3.3 Fallback when no `versionx.toml` exists
 
 Shim walks up for a config. If none found:
-- Uses the **user-level default** (`versionx global set node 20.11.1` writes to `$XDG_CONFIG_HOME/versionx/global.toml`).
+- Uses the **user-level default** (`versionx global set node 22.12.0` writes to `$XDG_CONFIG_HOME/versionx/global.toml`).
 - If no global default either: fail loudly with a clear error, OR fall back to system `node` per `[advanced] shim_fallback = "system" | "error"` (default: `error`).
 
 ### 3.4 Escape hatches
@@ -341,7 +341,7 @@ Pinning a runtime to a specific repo counts as "in use" for prune purposes.
 
 ```bash
 $ versionx import
-Detected .mise.toml with: node 20.11.1, python 3.12.2, pnpm 8.15.0
+Detected .mise.toml with: node 22.12.0, python 3.12.2, pnpm 8.15.0
 Created versionx.toml with runtimes + ecosystems.node.package_manager sections.
 ```
 

@@ -308,7 +308,7 @@ Example JSON shape for `versionx status --output json`:
   "workspace": {
     "root": "/home/k/repos/acme",
     "packages": [...],
-    "runtimes": {"node": "20.11.1", "python": "3.12.2"},
+    "runtimes": {"node": "22.12.0", "python": "3.12.2"},
     "links": [...]
   },
   "state": {

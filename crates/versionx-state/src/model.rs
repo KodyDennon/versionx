@@ -26,7 +26,7 @@ pub struct InstalledRuntime {
     pub id: i64,
     /// `"node"`, `"python"`, `"rust"`, `"pnpm"`, ...
     pub tool: String,
-    /// Exact resolved version (`"20.11.1"`, `"3.12.2"`).
+    /// Exact resolved version (`"22.12.0"`, `"3.12.2"`).
     pub version: String,
     /// Source label (`"nodejs.org"`, `"python-build-standalone"`, `"rustup"`).
     pub source: String,

@@ -66,7 +66,7 @@ impl VersionSpec {
 /// A concrete version the installer can act on.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ResolvedVersion {
-    /// Fully-qualified version (`"20.11.1"`, `"3.12.2"`).
+    /// Fully-qualified version (`"22.12.0"`, `"3.12.2"`).
     pub version: String,
     /// Optional channel label (`"lts"`, `"stable"`).
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -199,7 +199,7 @@ mod tests {
     #[test]
     fn resolved_version_round_trips_through_serde() {
         let v = ResolvedVersion {
-            version: "20.11.1".into(),
+            version: "22.12.0".into(),
             channel: Some("lts".into()),
             source: "nodejs.org".into(),
             sha256: Some("deadbeef".into()),

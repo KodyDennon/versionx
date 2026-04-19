@@ -9,7 +9,7 @@
 //! runtime = "node"
 //! min = "20"         # optional; defines the lower bound
 //! max = "22"         # optional; defines the upper bound
-//! exact = "20.11.1"  # optional; if set overrides min/max
+//! exact = "22.12.0"  # optional; if set overrides min/max
 //! ```
 //!
 //! Version comparisons use `semver::VersionReq` with a liberal parser:
@@ -79,7 +79,7 @@ enum Comparison {
 
 fn matches_range(actual: &Version, bound: &str, cmp: Comparison) -> bool {
     // Liberal bound parser: if the user writes "20", treat it as an
-    // inclusive bound on the major — we want "node = 20.11.1" to pass a
+    // inclusive bound on the major — we want "node = 22.12.0" to pass a
     // `min = "20"`.
     let Ok(bound_ver) = parse_flex(bound) else {
         let Ok(req) = VersionReq::parse(bound) else {
@@ -93,7 +93,7 @@ fn matches_range(actual: &Version, bound: &str, cmp: Comparison) -> bool {
     }
 }
 
-/// Accept `"20"` / `"20.11"` / `"20.11.1"` and produce a concrete
+/// Accept `"20"` / `"20.11"` / `"22.12.0"` and produce a concrete
 /// [`Version`]. Missing minor/patch become `0` so the bound is exact.
 fn parse_flex(raw: &str) -> Result<Version, semver::Error> {
     let parts: Vec<&str> = raw.split('.').collect();
@@ -153,7 +153,7 @@ mod tests {
     #[test]
     fn min_version_satisfied() {
         let p = mk_policy(&[("runtime", "node"), ("min", "20")]);
-        let ctx = ctx_with("node", "20.11.1");
+        let ctx = ctx_with("node", "22.12.0");
         assert!(evaluate(&p, &ctx).is_empty());
     }
 
@@ -168,7 +168,7 @@ mod tests {
 
     #[test]
     fn exact_rejects_other() {
-        let p = mk_policy(&[("runtime", "node"), ("exact", "20.11.1")]);
+        let p = mk_policy(&[("runtime", "node"), ("exact", "22.12.0")]);
         let ctx = ctx_with("node", "20.11.2");
         let findings = evaluate(&p, &ctx);
         assert_eq!(findings.len(), 1);
@@ -178,7 +178,7 @@ mod tests {
     #[test]
     fn missing_runtime_is_no_finding() {
         let p = mk_policy(&[("runtime", "ruby"), ("min", "3")]);
-        let ctx = ctx_with("node", "20.11.1");
+        let ctx = ctx_with("node", "22.12.0");
         assert!(evaluate(&p, &ctx).is_empty());
     }
 }

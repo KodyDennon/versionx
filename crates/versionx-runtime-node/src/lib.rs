@@ -3,7 +3,7 @@
 //! Source: official releases from `https://nodejs.org/dist/`.
 //!
 //! Resolution strategy:
-//! 1. If the spec is an exact version (`"20.11.1"`), fetch
+//! 1. If the spec is an exact version (`"22.12.0"`), fetch
 //!    `/dist/index.json` once and confirm it exists.
 //! 2. If it's a major (`"20"`) or caret (`"^20.11"`), pick the highest
 //!    matching version in the index.
@@ -46,7 +46,7 @@ impl NodeInstaller {
 
 #[derive(Clone, Debug, Deserialize)]
 struct NodeIndexEntry {
-    /// Leading `"v"` is included in the API (`"v20.11.1"`).
+    /// Leading `"v"` is included in the API (`"v22.12.0"`).
     version: String,
     /// Enum of file suffixes available for this release.
     #[allow(dead_code)] // Kept for future platform-availability filtering.
@@ -342,7 +342,7 @@ fn resolve_pick<'a>(index: &'a [NodeIndexEntry], spec_str: &str) -> Option<&'a N
 fn pick_by_version<'a>(index: &'a [NodeIndexEntry], spec: &str) -> Option<&'a NodeIndexEntry> {
     let target = spec.trim_start_matches('v');
 
-    // Exact match first (matches full `20.11.1` — Node index is ordered newest-first).
+    // Exact match first (matches full `22.12.0` — Node index is ordered newest-first).
     if let Some(hit) = index.iter().find(|e| e.version.trim_start_matches('v') == target) {
         return Some(hit);
     }
@@ -427,18 +427,18 @@ mod tests {
     fn artifact_name_covers_common_platforms() {
         let linux = Platform::new(Os::Linux, Arch::X86_64, Libc::Glibc);
         assert_eq!(
-            NodeInstaller::artifact_name("20.11.1", linux).as_deref(),
-            Some("node-v20.11.1-linux-x64.tar.xz")
+            NodeInstaller::artifact_name("22.12.0", linux).as_deref(),
+            Some("node-v22.12.0-linux-x64.tar.xz")
         );
         let mac_arm = Platform::new(Os::MacOs, Arch::Aarch64, Libc::Apple);
         assert_eq!(
-            NodeInstaller::artifact_name("20.11.1", mac_arm).as_deref(),
-            Some("node-v20.11.1-darwin-arm64.tar.xz")
+            NodeInstaller::artifact_name("22.12.0", mac_arm).as_deref(),
+            Some("node-v22.12.0-darwin-arm64.tar.xz")
         );
         let win = Platform::new(Os::Windows, Arch::X86_64, Libc::Msvc);
         assert_eq!(
-            NodeInstaller::artifact_name("20.11.1", win).as_deref(),
-            Some("node-v20.11.1-win-x64.zip")
+            NodeInstaller::artifact_name("22.12.0", win).as_deref(),
+            Some("node-v22.12.0-win-x64.zip")
         );
     }
 
@@ -446,41 +446,41 @@ mod tests {
     fn pick_by_exact_version() {
         let idx = vec![
             entry("v22.1.0", Lts::Flag(false)),
-            entry("v20.11.1", Lts::Codename("Iron".into())),
+            entry("v22.12.0", Lts::Codename("Iron".into())),
             entry("v20.11.0", Lts::Codename("Iron".into())),
             entry("v18.19.0", Lts::Codename("Hydrogen".into())),
         ];
-        let hit = pick_by_version(&idx, "20.11.1").unwrap();
-        assert_eq!(hit.version, "v20.11.1");
+        let hit = pick_by_version(&idx, "22.12.0").unwrap();
+        assert_eq!(hit.version, "v22.12.0");
     }
 
     #[test]
     fn pick_by_major_selects_highest_in_line() {
         let idx = vec![
             entry("v22.1.0", Lts::Flag(false)),
-            entry("v20.11.1", Lts::Codename("Iron".into())),
+            entry("v22.12.0", Lts::Codename("Iron".into())),
             entry("v20.11.0", Lts::Codename("Iron".into())),
         ];
-        let hit = pick_by_version(&idx, "20").unwrap();
-        assert_eq!(hit.version, "v20.11.1");
+        let hit = pick_by_version(&idx, "22").unwrap();
+        assert_eq!(hit.version, "v22.12.0");
     }
 
     #[test]
     fn lts_picks_newest_lts() {
         let idx = vec![
             entry("v22.1.0", Lts::Flag(false)),
-            entry("v20.11.1", Lts::Codename("Iron".into())),
+            entry("v22.12.0", Lts::Codename("Iron".into())),
             entry("v18.19.0", Lts::Codename("Hydrogen".into())),
         ];
         let hit = pick_lts(&idx, None).unwrap();
-        assert_eq!(hit.version, "v20.11.1");
+        assert_eq!(hit.version, "v22.12.0");
     }
 
     #[test]
     fn lts_codename_picks_matching_codename() {
         let idx = vec![
             entry("v22.1.0", Lts::Flag(false)),
-            entry("v20.11.1", Lts::Codename("Iron".into())),
+            entry("v22.12.0", Lts::Codename("Iron".into())),
             entry("v18.19.0", Lts::Codename("Hydrogen".into())),
         ];
         let hit = pick_lts(&idx, Some("hydrogen")).unwrap();
@@ -491,7 +491,7 @@ mod tests {
     fn stable_picks_head() {
         let idx = vec![
             entry("v22.1.0", Lts::Flag(false)),
-            entry("v20.11.1", Lts::Codename("Iron".into())),
+            entry("v22.12.0", Lts::Codename("Iron".into())),
         ];
         let hit = pick_stable(&idx).unwrap();
         assert_eq!(hit.version, "v22.1.0");

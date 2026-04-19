@@ -113,7 +113,7 @@ pub struct RuntimesConfig {
     pub providers: RuntimeProviders,
 
     /// Tool -> version spec. Captures everything not matched above.
-    /// Values may be a plain string (`"20.11.1"`) or a table with distribution
+    /// Values may be a plain string (`"22.12.0"`) or a table with distribution
     /// hints (`{ version = "21", distribution = "temurin" }`).
     #[serde(flatten, default)]
     pub tools: IndexMap<String, RuntimeSpec>,
@@ -146,7 +146,7 @@ impl RuntimeProviders {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(untagged)]
 pub enum RuntimeSpec {
-    /// `node = "20.11.1"` or `node = "lts"`
+    /// `node = "22.12.0"` or `node = "lts"`
     Version(String),
     /// `jvm = { version = "21", distribution = "temurin" }`
     Detailed {

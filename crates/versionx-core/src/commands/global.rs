@@ -157,11 +157,11 @@ mod tests {
         let tmp = tempfile::tempdir().unwrap();
         let home = Utf8PathBuf::from_path_buf(tmp.path().to_path_buf()).unwrap();
         let c = ctx(&home);
-        let out = set(&c, "node", "20.11.1").unwrap();
-        assert_eq!(out.version, "20.11.1");
+        let out = set(&c, "node", "22.12.0").unwrap();
+        assert_eq!(out.version, "22.12.0");
         assert!(out.previous.is_none());
         let body = std::fs::read_to_string(&out.path).unwrap();
-        assert!(body.contains("node = \"20.11.1\""));
+        assert!(body.contains("node = \"22.12.0\""));
     }
 
     #[test]
@@ -169,9 +169,9 @@ mod tests {
         let tmp = tempfile::tempdir().unwrap();
         let home = Utf8PathBuf::from_path_buf(tmp.path().to_path_buf()).unwrap();
         let c = ctx(&home);
-        set(&c, "node", "20.11.1").unwrap();
+        set(&c, "node", "22.12.0").unwrap();
         let got = get(&c, "node").unwrap();
-        assert_eq!(got.version.as_deref(), Some("20.11.1"));
+        assert_eq!(got.version.as_deref(), Some("22.12.0"));
     }
 
     #[test]
@@ -180,7 +180,7 @@ mod tests {
         let home = Utf8PathBuf::from_path_buf(tmp.path().to_path_buf()).unwrap();
         let c = ctx(&home);
         set(&c, "node", "18.19.0").unwrap();
-        let out = set(&c, "node", "20.11.1").unwrap();
+        let out = set(&c, "node", "22.12.0").unwrap();
         assert_eq!(out.previous.as_deref(), Some("18.19.0"));
     }
 
@@ -189,10 +189,10 @@ mod tests {
         let tmp = tempfile::tempdir().unwrap();
         let home = Utf8PathBuf::from_path_buf(tmp.path().to_path_buf()).unwrap();
         let c = ctx(&home);
-        set(&c, "node", "20.11.1").unwrap();
+        set(&c, "node", "22.12.0").unwrap();
         let out = unset(&c, "node").unwrap();
         assert!(out.removed);
-        assert_eq!(out.previous.as_deref(), Some("20.11.1"));
+        assert_eq!(out.previous.as_deref(), Some("22.12.0"));
         let got = get(&c, "node").unwrap();
         assert!(got.version.is_none());
     }

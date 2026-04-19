@@ -185,12 +185,12 @@ mod tests {
     fn minimal_config_parses() {
         let src = r#"
             [runtimes]
-            node = "20.11.1"
+            node = "22.12.0"
             python = "3.12"
         "#;
         let env = MapEnv(HashMap::new());
         let cfg = load_from_str(src, &env).unwrap();
-        assert_eq!(cfg.runtimes.tools.get("node").unwrap().version(), "20.11.1");
+        assert_eq!(cfg.runtimes.tools.get("node").unwrap().version(), "22.12.0");
         assert_eq!(cfg.runtimes.tools.get("python").unwrap().version(), "3.12");
     }
 

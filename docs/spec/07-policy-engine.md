@@ -126,7 +126,7 @@ type = "runtime_version"
 runtime = "node" | "python" | "rust" | ...
 min = "20.0.0"
 max = "22.99.99"                              # optional
-allowlist = ["20.11.1", "22.0.0"]             # optional, exact versions only
+allowlist = ["22.12.0", "22.0.0"]             # optional, exact versions only
 denylist = ["18.0.0", "18.0.1"]               # optional
 ```
 

@@ -408,12 +408,12 @@ mod tests {
     fn detects_node_with_packagemanager_field() {
         let fs = FakeFs::new().write(
             "/repo/package.json",
-            r#"{"name":"t","packageManager":"pnpm@8.15.0","engines":{"node":"20.11.1"}}"#,
+            r#"{"name":"t","packageManager":"pnpm@8.15.0","engines":{"node":"22.12.0"}}"#,
         );
         let r = detect_with(&fs, Utf8Path::new("/repo"));
         let eco = r.config.ecosystems.get("node").unwrap();
         assert_eq!(eco.package_manager.as_deref(), Some("pnpm"));
-        assert_eq!(r.config.runtimes.tools.get("node").unwrap().version(), "20.11.1");
+        assert_eq!(r.config.runtimes.tools.get("node").unwrap().version(), "22.12.0");
         assert_eq!(r.config.runtimes.tools.get("pnpm").unwrap().version(), "8.15.0");
     }
 
@@ -482,17 +482,17 @@ mod tests {
     #[test]
     fn tool_versions_file_imports_all_pins() {
         let fs =
-            FakeFs::new().write("/repo/.tool-versions", "# comment\nnode 20.11.1\npython 3.12.2\n");
+            FakeFs::new().write("/repo/.tool-versions", "# comment\nnode 22.12.0\npython 3.12.2\n");
         let r = detect_with(&fs, Utf8Path::new("/repo"));
-        assert_eq!(r.config.runtimes.tools["node"].version(), "20.11.1");
+        assert_eq!(r.config.runtimes.tools["node"].version(), "22.12.0");
         assert_eq!(r.config.runtimes.tools["python"].version(), "3.12.2");
     }
 
     #[test]
     fn nvmrc_imports_node_pin() {
-        let fs = FakeFs::new().write("/repo/.nvmrc", "v20.11.1\n");
+        let fs = FakeFs::new().write("/repo/.nvmrc", "v22.12.0\n");
         let r = detect_with(&fs, Utf8Path::new("/repo"));
-        assert_eq!(r.config.runtimes.tools["node"].version(), "20.11.1");
+        assert_eq!(r.config.runtimes.tools["node"].version(), "22.12.0");
     }
 
     #[test]

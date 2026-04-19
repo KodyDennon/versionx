@@ -20,7 +20,7 @@ fn init_detects_node_with_packagemanager_field() {
     let dir = TempDir::new().unwrap();
     fs::write(
         dir.path().join("package.json"),
-        r#"{"name":"demo","packageManager":"pnpm@8.15.0","engines":{"node":"20.11.1"}}"#,
+        r#"{"name":"demo","packageManager":"pnpm@8.15.0","engines":{"node":"22.12.0"}}"#,
     )
     .unwrap();
 
@@ -30,7 +30,7 @@ fn init_detects_node_with_packagemanager_field() {
     assert!(toml.contains("schema_version = \"1\""));
     assert!(toml.contains("package_manager = \"pnpm\""));
     assert!(toml.contains("pnpm = \"8.15.0\""));
-    assert!(toml.contains("node = \"20.11.1\""));
+    assert!(toml.contains("node = \"22.12.0\""));
 }
 
 #[test]

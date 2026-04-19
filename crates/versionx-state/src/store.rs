@@ -369,36 +369,36 @@ mod tests {
         let first = state
             .record_runtime(
                 "node",
-                "20.11.1",
+                "22.12.0",
                 "nodejs.org",
-                Utf8Path::new("/rt/node/20.11.1"),
+                Utf8Path::new("/rt/node/22.12.0"),
                 Some("deadbeef"),
             )
             .unwrap();
         let again = state
             .record_runtime(
                 "node",
-                "20.11.1",
+                "22.12.0",
                 "nodejs.org",
-                Utf8Path::new("/rt/node/20.11.1-moved"),
+                Utf8Path::new("/rt/node/22.12.0-moved"),
                 Some("deadbeef"),
             )
             .unwrap();
         assert_eq!(first.id, again.id);
-        assert_eq!(again.install_path.as_str(), "/rt/node/20.11.1-moved");
+        assert_eq!(again.install_path.as_str(), "/rt/node/22.12.0-moved");
     }
 
     #[test]
     fn list_runtimes_is_ordered() {
         let state = open_in_memory().unwrap();
         state.record_runtime("python", "3.12.2", "pbs", Utf8Path::new("/a"), None).unwrap();
-        state.record_runtime("node", "20.11.1", "nodejs.org", Utf8Path::new("/b"), None).unwrap();
+        state.record_runtime("node", "22.12.0", "nodejs.org", Utf8Path::new("/b"), None).unwrap();
         state.record_runtime("node", "18.19.0", "nodejs.org", Utf8Path::new("/c"), None).unwrap();
         let all = state.list_runtimes().unwrap();
         assert_eq!(all.len(), 3);
         assert_eq!(all[0].tool, "node");
         assert_eq!(all[0].version, "18.19.0");
-        assert_eq!(all[1].version, "20.11.1");
+        assert_eq!(all[1].version, "22.12.0");
         assert_eq!(all[2].tool, "python");
     }
 

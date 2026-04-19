@@ -251,12 +251,12 @@ mod tests {
         let mut ctx = PolicyContext::new("/tmp".into());
         ctx.runtimes.insert(
             "node".into(),
-            crate::context::ContextRuntime { name: "node".into(), version: "20.11.1".into() },
+            crate::context::ContextRuntime { name: "node".into(), version: "22.12.0".into() },
         );
         let out = sb
             .run(
                 r#"
-                    if vx.runtimes.node ~= "20.11.1" then
+                    if vx.runtimes.node ~= "22.12.0" then
                         report("wrong version")
                     else
                         report("ok")
