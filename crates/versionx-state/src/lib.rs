@@ -1,20 +1,27 @@
-//! `SQLite` state DB (rusqlite + WAL) with git-backed history recovery.
+//! SQLite-backed state store for Versionx.
 //!
-//! Part of the Versionx workspace. See the workspace README and `docs/spec/` for architecture.
+//! Uses `rusqlite` with WAL + `synchronous=NORMAL` + sensible `busy_timeout`.
+//! The whole database is rebuildable from `git + versionx.toml + versionx.lock`,
+//! so anything stored here is a cache — losing it never compromises
+//! correctness (`docs/spec/02-config-and-state-model.md §5`).
 //!
-//! Status: scaffold (crate is stubbed for 0.1.0 implementation).
+//! What lives here in 0.1.0:
+//! - `schema_migrations` — migration version tracking.
+//! - `repos` — every repo Versionx has touched on this machine.
+//! - `runtimes_installed` — toolchain installations with SHA-256 + path.
+//! - `repo_runtimes` — which runtime a repo pinned.
+//! - `runs` — audit trail for sync/install/release runs.
+//!
+//! Later schema versions add plans, policies, releases, etc.
 
 #![deny(unsafe_code)]
 
-/// Crate version as declared in `Cargo.toml`.
-pub const VERSION: &str = env!("CARGO_PKG_VERSION");
+pub mod error;
+pub mod model;
 
-#[cfg(test)]
-mod tests {
-    use super::*;
+mod migrations;
+mod store;
 
-    #[test]
-    fn version_matches_cargo() {
-        assert!(!VERSION.is_empty());
-    }
-}
+pub use error::{StateError, StateResult};
+pub use model::{InstalledRuntime, Repo, Run, RunOutcome};
+pub use store::{State, open, open_in_memory};

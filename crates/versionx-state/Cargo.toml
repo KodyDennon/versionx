@@ -24,6 +24,7 @@ chrono.workspace = true
 tracing.workspace = true
 zstd.workspace = true
 blake3.workspace = true
+parking_lot.workspace = true
 
 [dev-dependencies]
 tempfile.workspace = true

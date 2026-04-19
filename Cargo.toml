@@ -113,6 +113,12 @@ rusqlite = { version = "0.37", features = ["bundled", "chrono", "serde_json"] }
 rusqlite_migration = "2.3"
 zstd = "0.13"
 
+# Archive formats
+tar = "0.4"
+flate2 = "1.0"
+xz2 = "0.1"
+zip = { version = "2.2", default-features = false, features = ["deflate", "bzip2", "time"] }
+
 # Hashing
 blake3 = "1.5"
 sha2 = "0.10"
@@ -195,6 +201,13 @@ items_after_statements = "allow"
 trivially_copy_pass_by_ref = "allow"
 zero_sized_map_values = "allow"
 literal_string_with_formatting_args = "allow"
+large_stack_arrays = "allow"
+case_sensitive_file_extension_comparisons = "allow"
+significant_drop_tightening = "allow"
+# We have internal `pub(crate)` helpers inside private modules on purpose
+# so that only the re-export-gated public API escapes the crate boundary.
+pub_with_shorthand = "allow"
+redundant_pub_crate = "allow"
 
 # Profile tuning
 [profile.release]
