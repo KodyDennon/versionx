@@ -26,6 +26,12 @@ semver.workspace = true
 regex.workspace = true
 versionx-config.workspace = true
 versionx-events.workspace = true
+versionx-workspace.workspace = true
+versionx-lockfile.workspace = true
+versionx-release.workspace = true
+indexmap = { workspace = true }
+blake3.workspace = true
+hex.workspace = true
 
 [dev-dependencies]
 tempfile.workspace = true

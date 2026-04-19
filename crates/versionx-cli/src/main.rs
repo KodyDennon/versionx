@@ -145,6 +145,10 @@ enum Command {
     #[command(subcommand)]
     Policy(PolicyCommand),
 
+    /// Waiver management — time-boxed policy exceptions.
+    #[command(subcommand)]
+    Waiver(WaiverCommand),
+
     /// MCP server for AI-agent integration.
     #[command(subcommand)]
     Mcp(McpCommand),
@@ -302,6 +306,31 @@ enum PolicyCommand {
     Init,
     /// Evaluate all policies against the current workspace.
     Check,
+    /// Explain why a specific policy fired (or didn't) by name.
+    Explain { name: String },
+    /// List loaded policies + their kinds.
+    List,
+    /// Show aggregate counts per kind / severity.
+    Stats,
+    /// Refresh the policy lockfile (versionx.policy.lock) with current
+    /// content hashes for every loaded policy source.
+    Update,
+    /// Audit waivers for expired / expiring-soon entries.
+    Audit,
+}
+
+#[derive(Subcommand, Debug)]
+enum WaiverCommand {
+    /// List every waiver with days-until-expiry.
+    List,
+    /// Audit waivers: split into live / expiring-soon / expired.
+    Audit,
+    /// Delete every already-expired waiver from the policies file at
+    /// `<path>` (default: .versionx/policies/local.toml).
+    Expire {
+        #[arg(long, value_name = "FILE")]
+        path: Option<Utf8PathBuf>,
+    },
 }
 
 #[derive(Subcommand, Debug)]
@@ -372,7 +401,8 @@ fn dispatch(cli: Cli) -> Result<ExitCode> {
         Command::Tui => run_tui(cli.cwd.as_deref()),
         Command::Release(sub) => run_release(sub, cli.cwd.as_deref(), cli.output),
         Command::Plan(sub) => run_plan(sub, cli.cwd.as_deref(), cli.output),
-        Command::Policy(_) => not_yet("policy", "0.5.0"),
+        Command::Policy(sub) => run_policy(sub, cli.cwd.as_deref(), cli.output),
+        Command::Waiver(sub) => run_waiver(sub, cli.cwd.as_deref(), cli.output),
         Command::Mcp(_) => not_yet("mcp", "0.6.0"),
     }
 }
@@ -1230,6 +1260,386 @@ fn collect_commit_messages(root: &camino::Utf8Path) -> Vec<String> {
     }
     let text = String::from_utf8_lossy(&out.stdout);
     text.split('\0').map(str::trim).filter(|s| !s.is_empty()).map(str::to_string).collect()
+}
+
+#[allow(clippy::too_many_lines)] // dispatcher over 7 subcommands; splitting relocates size
+fn run_policy(
+    sub: PolicyCommand,
+    cwd: Option<&camino::Utf8Path>,
+    output: OutputFormat,
+) -> Result<ExitCode> {
+    use versionx_policy as pol;
+    let root = resolve_cwd(cwd)?;
+    let dir = pol::default_policies_dir(&root);
+
+    match sub {
+        PolicyCommand::Init => {
+            std::fs::create_dir_all(dir.as_std_path()).context("creating policies dir")?;
+            let target = dir.join("main.toml");
+            if target.is_file() {
+                emit_msg(
+                    output,
+                    "policy file already exists",
+                    serde_json::json!({"path": target.to_string()}),
+                )?;
+                return Ok(ExitCode::from(0));
+            }
+            let starter = r#"# Versionx policies — edit to fit your org's rules.
+# See docs/spec/07-policy-engine.md for the full catalog.
+
+[[policy]]
+name = "conventional-commits"
+kind = "commit_format"
+severity = "warn"
+style = "conventional"
+"#;
+            std::fs::write(target.as_std_path(), starter).context("writing starter policy")?;
+            emit_msg(
+                output,
+                &format!("wrote {target}"),
+                serde_json::json!({"created": target.to_string()}),
+            )?;
+            Ok(ExitCode::from(0))
+        }
+        PolicyCommand::Check => {
+            let docs = pol::load_dir(&dir, &[]).context("loading policies")?;
+            let set = pol::PolicySet::from_documents(&docs).context("merging policies")?;
+            let ctx = build_policy_context(&root)?;
+            let report = pol::evaluate(&set, &ctx).context("evaluating policies")?;
+            emit_policy_report(&report, output)
+        }
+        PolicyCommand::Explain { name } => {
+            let docs = pol::load_dir(&dir, &[]).context("loading policies")?;
+            for d in &docs {
+                for p in &d.document.policies {
+                    if p.name == name {
+                        match output {
+                            OutputFormat::Json | OutputFormat::Ndjson => {
+                                let mut stdout = io::stdout().lock();
+                                serde_json::to_writer(&mut stdout, p)?;
+                                stdout.write_all(b"\n")?;
+                            }
+                            OutputFormat::Human => {
+                                println!("policy: {}", p.name);
+                                println!("kind:   {:?}", p.kind);
+                                println!("severity: {:?}", p.severity);
+                                println!("sealed: {}", p.sealed);
+                                println!("source: {}", d.path);
+                                if let Some(msg) = &p.message {
+                                    println!("message: {msg}");
+                                }
+                            }
+                        }
+                        return Ok(ExitCode::from(0));
+                    }
+                }
+            }
+            bail_with(output, "policy explain", &format!("policy `{name}` not found"))
+        }
+        PolicyCommand::List => {
+            let docs = pol::load_dir(&dir, &[]).context("loading policies")?;
+            match output {
+                OutputFormat::Json | OutputFormat::Ndjson => {
+                    let payload: Vec<_> = docs
+                        .iter()
+                        .flat_map(|d| {
+                            d.document.policies.iter().map(move |p| {
+                                serde_json::json!({
+                                    "name": p.name,
+                                    "kind": p.kind,
+                                    "severity": p.severity,
+                                    "sealed": p.sealed,
+                                    "source": d.path.to_string(),
+                                })
+                            })
+                        })
+                        .collect();
+                    let mut stdout = io::stdout().lock();
+                    serde_json::to_writer(&mut stdout, &payload)?;
+                    stdout.write_all(b"\n")?;
+                }
+                OutputFormat::Human => {
+                    for d in &docs {
+                        for p in &d.document.policies {
+                            let seal = if p.sealed { "🔒" } else { "·" };
+                            println!(
+                                "  {seal} {:<32} {:<22} [{:?}]",
+                                p.name,
+                                format!("{:?}", p.kind),
+                                p.severity
+                            );
+                        }
+                    }
+                }
+            }
+            Ok(ExitCode::from(0))
+        }
+        PolicyCommand::Stats => {
+            let docs = pol::load_dir(&dir, &[]).context("loading policies")?;
+            let set = pol::PolicySet::from_documents(&docs).context("merging policies")?;
+            let ctx = build_policy_context(&root)?;
+            let report = pol::evaluate(&set, &ctx).context("evaluating policies")?;
+            let tally = report.tally();
+            match output {
+                OutputFormat::Json | OutputFormat::Ndjson => {
+                    let mut stdout = io::stdout().lock();
+                    serde_json::to_writer(&mut stdout, &tally)?;
+                    stdout.write_all(b"\n")?;
+                }
+                OutputFormat::Human => {
+                    println!("deny:   {}", tally.deny);
+                    println!("warn:   {}", tally.warn);
+                    println!("info:   {}", tally.info);
+                    println!("waived: {}", tally.waived);
+                }
+            }
+            Ok(ExitCode::from(0))
+        }
+        PolicyCommand::Update => {
+            let docs = pol::load_dir(&dir, &[]).context("loading policies")?;
+            let mut lf = pol::PolicyLockfile::new();
+            for d in &docs {
+                let hash = pol::hash_source(&d.path).context("hashing policy source")?;
+                let sealed_names: Vec<String> = d
+                    .document
+                    .policies
+                    .iter()
+                    .filter(|p| p.sealed)
+                    .map(|p| p.name.clone())
+                    .collect();
+                lf.sources.push(pol::LockedSource {
+                    path: d.path.to_string(),
+                    blake3: hash,
+                    sealed: sealed_names,
+                });
+            }
+            let out_path = root.join("versionx.policy.lock");
+            lf.save(&out_path).context("writing policy lockfile")?;
+            emit_msg(
+                output,
+                &format!("wrote {out_path}"),
+                serde_json::json!({"lockfile": out_path.to_string(), "sources": lf.sources.len()}),
+            )?;
+            Ok(ExitCode::from(0))
+        }
+        PolicyCommand::Audit => {
+            let docs = pol::load_dir(&dir, &[]).context("loading policies")?;
+            let set = pol::PolicySet::from_documents(&docs).context("merging policies")?;
+            emit_waiver_audit(&pol::audit_waivers(&set.waivers, chrono::Utc::now()), output)
+        }
+    }
+}
+
+fn run_waiver(
+    sub: WaiverCommand,
+    cwd: Option<&camino::Utf8Path>,
+    output: OutputFormat,
+) -> Result<ExitCode> {
+    use versionx_policy as pol;
+    let root = resolve_cwd(cwd)?;
+    let dir = pol::default_policies_dir(&root);
+
+    match sub {
+        WaiverCommand::List => {
+            let docs = pol::load_dir(&dir, &[]).context("loading policies")?;
+            let now = chrono::Utc::now();
+            match output {
+                OutputFormat::Json | OutputFormat::Ndjson => {
+                    let payload: Vec<_> = docs
+                        .iter()
+                        .flat_map(|d| d.document.waivers.iter())
+                        .map(|w| {
+                            serde_json::json!({
+                                "policy": w.policy,
+                                "reason": w.reason,
+                                "expires_at": w.expires_at,
+                                "owner": w.owner,
+                                "days_until_expiry": w.days_until_expiry(now),
+                            })
+                        })
+                        .collect();
+                    let mut stdout = io::stdout().lock();
+                    serde_json::to_writer(&mut stdout, &payload)?;
+                    stdout.write_all(b"\n")?;
+                }
+                OutputFormat::Human => {
+                    for d in &docs {
+                        for w in &d.document.waivers {
+                            let days = w.days_until_expiry(now);
+                            let marker = if days < 0 {
+                                "✗"
+                            } else if days <= 7 {
+                                "!"
+                            } else {
+                                "·"
+                            };
+                            println!(
+                                "  {marker} {:<24} {:>4}d remaining — {}",
+                                w.policy, days, w.reason
+                            );
+                        }
+                    }
+                }
+            }
+            Ok(ExitCode::from(0))
+        }
+        WaiverCommand::Audit => {
+            let docs = pol::load_dir(&dir, &[]).context("loading policies")?;
+            let set = pol::PolicySet::from_documents(&docs).context("merging policies")?;
+            emit_waiver_audit(&pol::audit_waivers(&set.waivers, chrono::Utc::now()), output)
+        }
+        WaiverCommand::Expire { path } => {
+            let file = path.unwrap_or_else(|| dir.join("local.toml"));
+            if !file.is_file() {
+                return bail_with(output, "waiver expire", &format!("{file} not found"));
+            }
+            let raw = std::fs::read_to_string(file.as_std_path()).context("reading waivers")?;
+            let mut doc = versionx_policy::parse_policy_toml(&raw).context("parsing waivers")?;
+            let before = doc.waivers.len();
+            let now = chrono::Utc::now();
+            doc.waivers.retain(|w| w.is_live(now));
+            let removed = before - doc.waivers.len();
+            let rendered =
+                versionx_policy::render_policy_toml(&doc).context("rendering waivers")?;
+            std::fs::write(file.as_std_path(), rendered).context("writing waivers")?;
+            emit_msg(
+                output,
+                &format!("expired {removed} waivers"),
+                serde_json::json!({"removed": removed, "path": file.to_string()}),
+            )?;
+            Ok(ExitCode::from(0))
+        }
+    }
+}
+
+/// Build a [`PolicyContext`] from workspace discovery + lockfile hash
+/// state. Populates components + runtimes; leaves link/advisory
+/// channels empty (they're filled by higher-level subsystems — 0.5
+/// just needs the plumbing).
+fn build_policy_context(root: &camino::Utf8Path) -> Result<versionx_policy::PolicyContext> {
+    use versionx_policy::{ContextComponent, ContextRuntime, PolicyContext};
+    use versionx_workspace::discovery;
+
+    let ws = discovery::discover(root).context("discovering workspace")?;
+    let mut ctx = PolicyContext::new(root.to_path_buf());
+    for c in ws.components.values() {
+        let mut deps = std::collections::BTreeMap::new();
+        for d in &c.depends_on {
+            deps.insert(d.to_string(), "workspace:*".into());
+        }
+        ctx.components.insert(
+            c.id.to_string(),
+            ContextComponent {
+                id: c.id.to_string(),
+                kind: c.kind.as_str().to_string(),
+                root: c.root.clone(),
+                version: c.version.as_ref().map(ToString::to_string),
+                dependencies: deps,
+                tags: Vec::new(),
+            },
+        );
+    }
+
+    // Runtimes — read pins straight from `versionx.toml` so
+    // `runtime_version` rules can fire without depending on the full
+    // core loader.
+    if let Some(pins) = read_runtime_pins(root) {
+        for (name, version) in pins {
+            ctx.runtimes.insert(name.clone(), ContextRuntime { name, version });
+        }
+    }
+    Ok(ctx)
+}
+
+/// Pull `[runtimes]` pins out of `versionx.toml`. Returns `None` if the
+/// file is missing / malformed.
+fn read_runtime_pins(root: &camino::Utf8Path) -> Option<Vec<(String, String)>> {
+    let cfg_path = root.join("versionx.toml");
+    let raw = std::fs::read_to_string(cfg_path.as_std_path()).ok()?;
+    let doc: toml::Value = toml::from_str(&raw).ok()?;
+    let tbl = doc.get("runtimes")?.as_table()?;
+    let mut out = Vec::with_capacity(tbl.len());
+    for (name, val) in tbl {
+        let version = match val {
+            toml::Value::String(s) => s.clone(),
+            toml::Value::Table(t) => {
+                t.get("version").and_then(|v| v.as_str()).unwrap_or("").to_string()
+            }
+            _ => continue,
+        };
+        if !version.is_empty() {
+            out.push((name.clone(), version));
+        }
+    }
+    Some(out)
+}
+
+fn emit_policy_report(
+    report: &versionx_policy::PolicyReport,
+    output: OutputFormat,
+) -> Result<ExitCode> {
+    match output {
+        OutputFormat::Json | OutputFormat::Ndjson => {
+            let mut stdout = io::stdout().lock();
+            serde_json::to_writer(&mut stdout, report)?;
+            stdout.write_all(b"\n")?;
+        }
+        OutputFormat::Human => {
+            if report.findings.is_empty() {
+                println!("all policies pass.");
+            } else {
+                for f in &report.findings {
+                    let waived = if f.waiver.is_some() { " (waived)" } else { "" };
+                    println!(
+                        "  [{:?}] {:<24} {:<40}{waived}",
+                        f.finding.severity, f.finding.policy, f.finding.message
+                    );
+                }
+                let t = report.tally();
+                println!(
+                    "\ndeny: {} warn: {} info: {} waived: {}",
+                    t.deny, t.warn, t.info, t.waived
+                );
+            }
+        }
+    }
+    if report.has_blocking() { Ok(ExitCode::from(1)) } else { Ok(ExitCode::from(0)) }
+}
+
+fn emit_waiver_audit(
+    audit: &versionx_policy::WaiverAudit,
+    output: OutputFormat,
+) -> Result<ExitCode> {
+    match output {
+        OutputFormat::Json | OutputFormat::Ndjson => {
+            let payload = serde_json::json!({
+                "live": audit.live,
+                "expiring_soon": audit.expiring_soon,
+                "expired": audit.expired,
+            });
+            let mut stdout = io::stdout().lock();
+            serde_json::to_writer(&mut stdout, &payload)?;
+            stdout.write_all(b"\n")?;
+        }
+        OutputFormat::Human => {
+            if !audit.expired.is_empty() {
+                println!("expired:");
+                for e in &audit.expired {
+                    println!("  {e}");
+                }
+            }
+            if !audit.expiring_soon.is_empty() {
+                println!("expiring soon:");
+                for e in &audit.expiring_soon {
+                    println!("  {e}");
+                }
+            }
+            if !audit.live.is_empty() {
+                println!("live waivers: {}", audit.live.len());
+            }
+        }
+    }
+    Ok(ExitCode::from(0))
 }
 
 fn run_tui(cwd: Option<&camino::Utf8Path>) -> Result<ExitCode> {

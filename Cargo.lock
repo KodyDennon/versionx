@@ -5068,10 +5068,12 @@ dependencies = [
  "serde_json",
  "tempfile",
  "tokio",
+ "toml",
  "tracing",
  "tracing-subscriber",
  "versionx-core",
  "versionx-daemon",
+ "versionx-policy",
  "versionx-release",
  "versionx-sdk",
  "versionx-workspace",
@@ -5260,8 +5262,11 @@ dependencies = [
 name = "versionx-policy"
 version = "0.1.0-dev"
 dependencies = [
+ "blake3",
  "camino",
  "chrono",
+ "hex",
+ "indexmap",
  "insta",
  "mlua",
  "regex",
@@ -5274,6 +5279,9 @@ dependencies = [
  "tracing",
  "versionx-config",
  "versionx-events",
+ "versionx-lockfile",
+ "versionx-release",
+ "versionx-workspace",
 ]
 
 [[package]]
