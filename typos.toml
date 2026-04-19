@@ -28,4 +28,13 @@ extend-ignore-re = [
     "PEP 440",
     "SHA-256",
     "SHA256",
+    "ratatui",
+    "invokable",
+    "Unparseable",
 ]
+
+[default.extend-words]
+# Acceptable spellings — keep as English variants, not typos.
+ratatui = "ratatui"
+invokable = "invokable"
+Unparseable = "Unparseable"
