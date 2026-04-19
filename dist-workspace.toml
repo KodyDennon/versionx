@@ -8,6 +8,12 @@ cargo-dist-version = "0.31.0"
 # CI backend.
 ci = "github"
 
+# Skip dist's dirty-file gate for the Windows MSI wxs templates and the
+# generated CI workflow — they drift whenever a crate description or
+# dependabot bumps a pinned action, and we don't want that to block the
+# release. The MSI still builds correctly; the workflow still runs.
+allow-dirty = ["msi", "ci"]
+
 # Installers dist will generate alongside raw archives.
 # - shell:      curl | sh installer for Unix
 # - powershell: PowerShell one-liner for Windows
