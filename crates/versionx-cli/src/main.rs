@@ -109,6 +109,15 @@ enum Command {
     /// shims dir to `PATH`.
     Activate(ActivateArgs),
 
+    /// Auto-install the activation hook into the user's shell rc file
+    /// (~/.zshrc, ~/.bashrc, etc.). Idempotent: re-running detects the
+    /// existing marker + skips.
+    InstallShellHook {
+        /// Force a specific shell. Defaults to `$SHELL`.
+        #[arg(long, value_enum)]
+        shell: Option<Shell>,
+    },
+
     /// Runtime installation and management subcommands.
     #[command(subcommand)]
     Runtime(RuntimeCommand),
@@ -498,10 +507,7 @@ fn main() -> ExitCode {
 
 fn dispatch(cli: Cli) -> Result<ExitCode> {
     let Some(command) = cli.command else {
-        // `versionx` with no args prints a short status-ish message.
-        println!("versionx {} — scaffold.", env!("CARGO_PKG_VERSION"));
-        println!("See `versionx --help` for commands, or `docs/spec/` for the design.");
-        return Ok(ExitCode::from(0));
+        return run_bare(cli.cwd.as_deref(), cli.output);
     };
 
     match command {
@@ -512,6 +518,7 @@ fn dispatch(cli: Cli) -> Result<ExitCode> {
         Command::Install(args) => block_on(run_install(args, cli.output)),
         Command::Which { tool } => block_on(run_which(tool, cli.cwd.as_deref(), cli.output)),
         Command::Activate(args) => run_activate(args.shell, cli.output),
+        Command::InstallShellHook { shell } => run_install_shell_hook(shell, cli.output),
         Command::Runtime(sub) => run_runtime(sub, cli.output),
         Command::Global(sub) => run_global(sub, cli.output),
         Command::Workspace(sub) => run_workspace(sub, cli.cwd.as_deref(), cli.output),
@@ -1936,6 +1943,103 @@ async fn run_changelog(
     }
 }
 
+/// Bare `versionx` invocation — auto-detect workspace, report status,
+/// suggest next steps. Designed to be the first thing a new user ever
+/// runs.
+#[allow(clippy::too_many_lines)]
+fn run_bare(cwd: Option<&camino::Utf8Path>, output: OutputFormat) -> Result<ExitCode> {
+    let root = resolve_cwd(cwd).unwrap_or_else(|_| camino::Utf8PathBuf::from("."));
+
+    // First-run bootstrap: make sure $VERSIONX_HOME exists so subsequent
+    // commands don't scream.
+    let home_ok =
+        versionx_core::paths::VersionxHome::detect().is_ok_and(|h| h.ensure_dirs().is_ok());
+
+    // Gather facts without failing loud on any single missing piece.
+    let has_config = root.join("versionx.toml").is_file();
+    let has_lock = root.join("versionx.lock").is_file();
+    let in_git = versionx_git::read::summarize(&root).is_ok();
+    let workspace = versionx_workspace::discovery::discover(&root).ok();
+    let component_count = workspace.as_ref().map_or(0, |w| w.components.len());
+
+    let daemon_paths = versionx_daemon::DaemonPaths::from_env();
+    // Tiny blocking probe so we can report in sync code.
+    let daemon_running = daemon_paths.as_ref().is_some_and(|p| {
+        tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .ok()
+            .is_some_and(|rt| rt.block_on(versionx_daemon::is_running(p)))
+    });
+
+    match output {
+        OutputFormat::Json | OutputFormat::Ndjson => {
+            let payload = serde_json::json!({
+                "version": env!("CARGO_PKG_VERSION"),
+                "workspace_root": root,
+                "in_git": in_git,
+                "has_config": has_config,
+                "has_lockfile": has_lock,
+                "components": component_count,
+                "daemon_running": daemon_running,
+                "home_ok": home_ok,
+            });
+            let mut stdout = io::stdout().lock();
+            serde_json::to_writer(&mut stdout, &payload)?;
+            stdout.write_all(b"\n")?;
+            return Ok(ExitCode::from(0));
+        }
+        OutputFormat::Human => {}
+    }
+
+    println!("versionx {} · {}", env!("CARGO_PKG_VERSION"), root);
+
+    // One-line status banner.
+    let mut flags = Vec::new();
+    flags.push(if in_git { "git✓" } else { "git✗" });
+    flags.push(if has_config { "config✓" } else { "config✗" });
+    flags.push(if has_lock { "lock✓" } else { "lock✗" });
+    flags.push(if daemon_running { "daemon✓" } else { "daemon✗" });
+    if component_count > 0 {
+        println!("  {} · {} components discovered", flags.join(" · "), component_count);
+    } else {
+        println!("  {}", flags.join(" · "));
+    }
+
+    // Suggestion stack — top item first, user follows arrows.
+    println!();
+    let mut suggested = false;
+    if !in_git {
+        println!("  → not inside a git repo. versionx works best inside one.");
+        suggested = true;
+    } else if !has_config && component_count == 0 {
+        println!("  → no manifests detected. `versionx init` to scaffold one anyway.");
+        suggested = true;
+    } else if !has_config {
+        println!("  → run `versionx init` to synthesize a versionx.toml for this workspace.");
+        suggested = true;
+    }
+    if has_config && !has_lock {
+        println!("  → run `versionx sync` to resolve + record versions into versionx.lock.");
+        suggested = true;
+    }
+    if has_config && has_lock && component_count > 0 {
+        println!("  → run `versionx workspace status` to see what changed since last release.");
+        println!("  → run `versionx bump` to preview proposed bumps.");
+        suggested = true;
+    }
+    if !daemon_running {
+        println!(
+            "  → run `versionx daemon start` (or `versionx install-shell-hook`) for warm caching."
+        );
+        suggested = true;
+    }
+    if !suggested {
+        println!("  everything looks good. try `versionx workspace status` or `versionx --help`.");
+    }
+    Ok(ExitCode::from(0))
+}
+
 fn run_fleet(
     sub: FleetCommand,
     cwd: Option<&camino::Utf8Path>,
@@ -2339,6 +2443,85 @@ fn run_tui(cwd: Option<&camino::Utf8Path>) -> Result<ExitCode> {
     }
     let status = cmd.status().context("spawning versionx-tui")?;
     Ok(status.code().map_or_else(|| ExitCode::from(1), |c| ExitCode::from(c as u8)))
+}
+
+/// Append `eval "$(versionx activate <shell>)"` to the user's shell rc
+/// file. Idempotent via a sentinel line — re-running does nothing.
+fn run_install_shell_hook(shell: Option<Shell>, output: OutputFormat) -> Result<ExitCode> {
+    let shell = shell.unwrap_or_else(detect_shell);
+    let rc = rc_file_for(shell).context("locating shell rc file")?;
+    let marker =
+        "# versionx: shell activation (do not edit — managed by `versionx install-shell-hook`)";
+    let snippet = match shell {
+        Shell::Bash | Shell::Zsh => format!(
+            "{marker}\ncommand -v versionx >/dev/null 2>&1 && eval \"$(versionx activate {})\"\n",
+            shell_name_lower(shell)
+        ),
+        Shell::Fish => {
+            format!("{marker}\nif type -q versionx\n    versionx activate fish | source\nend\n")
+        }
+        Shell::Pwsh => format!(
+            "{marker}\nif (Get-Command versionx -ErrorAction SilentlyContinue) {{ Invoke-Expression (versionx activate pwsh | Out-String) }}\n"
+        ),
+    };
+
+    let existing = std::fs::read_to_string(&rc).unwrap_or_default();
+    if existing.contains(marker) {
+        emit_msg(
+            output,
+            &format!("shell hook already installed in {}", rc.display()),
+            serde_json::json!({"already_installed": true, "rc": rc.display().to_string()}),
+        )?;
+        return Ok(ExitCode::from(0));
+    }
+    // Append, ensuring a leading newline so we don't glue onto the previous line.
+    let body = if existing.is_empty() || existing.ends_with('\n') {
+        format!("{existing}\n{snippet}")
+    } else {
+        format!("{existing}\n\n{snippet}")
+    };
+    if let Some(parent) = rc.parent() {
+        std::fs::create_dir_all(parent).context("creating rc parent")?;
+    }
+    std::fs::write(&rc, body).with_context(|| format!("writing {}", rc.display()))?;
+    emit_msg(
+        output,
+        &format!("installed shell hook into {}", rc.display()),
+        serde_json::json!({"installed": true, "rc": rc.display().to_string()}),
+    )?;
+    Ok(ExitCode::from(0))
+}
+
+fn detect_shell() -> Shell {
+    let sh = std::env::var("SHELL").unwrap_or_default();
+    if sh.ends_with("zsh") {
+        Shell::Zsh
+    } else if sh.ends_with("fish") {
+        Shell::Fish
+    } else if sh.contains("pwsh") || sh.contains("powershell") {
+        Shell::Pwsh
+    } else {
+        Shell::Bash
+    }
+}
+
+fn rc_file_for(shell: Shell) -> Result<std::path::PathBuf> {
+    let home = directories::BaseDirs::new().context("no home directory")?.home_dir().to_path_buf();
+    Ok(match shell {
+        Shell::Bash => home.join(".bashrc"),
+        Shell::Zsh => home.join(".zshrc"),
+        Shell::Fish => home.join(".config/fish/config.fish"),
+        Shell::Pwsh => home.join(".config/powershell/profile.ps1"),
+    })
+}
+
+const fn shell_name_lower(shell: Shell) -> &'static str {
+    match shell {
+        Shell::Bash => "bash",
+        Shell::Zsh => "zsh",
+        Shell::Fish => "fish",
+        Shell::Pwsh => "pwsh",
+    }
 }
 
 fn run_activate(shell: Shell, output: OutputFormat) -> Result<ExitCode> {

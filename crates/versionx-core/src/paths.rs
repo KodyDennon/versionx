@@ -80,6 +80,24 @@ impl VersionxHome {
     pub fn global_config(&self) -> Utf8PathBuf {
         self.config.join("global.toml")
     }
+
+    /// Create every directory this layout expects. Idempotent.
+    /// First-run bootstrap calls this so subsequent commands don't
+    /// need to re-check.
+    pub fn ensure_dirs(&self) -> std::io::Result<()> {
+        for dir in [
+            &self.data,
+            &self.cache,
+            &self.config,
+            &self.state,
+            &self.runtime,
+            &self.runtimes_dir(),
+            &self.shims_dir(),
+        ] {
+            std::fs::create_dir_all(dir.as_std_path())?;
+        }
+        Ok(())
+    }
 }
 
 fn pathbuf_from(p: &std::path::Path) -> Result<Utf8PathBuf, PathDetectionError> {

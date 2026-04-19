@@ -8,11 +8,28 @@ Versionx unifies runtime/toolchain management (asdf/mise replacement), dependenc
 
 ---
 
+## Install
+
+```bash
+# macOS / Linux
+curl --proto '=https' --tlsv1.2 -LsSf \
+  https://github.com/KodyDennon/versionx/releases/latest/download/versionx-installer.sh | sh
+
+# Windows (PowerShell)
+powershell -ExecutionPolicy ByPass -c "irm https://github.com/KodyDennon/versionx/releases/latest/download/versionx-installer.ps1 | iex"
+```
+
+Wire the shell hook once:
+
+```bash
+versionx install-shell-hook    # writes to ~/.zshrc / ~/.bashrc / fish config
+exec $SHELL                    # reload
+versionx                       # bare run — auto-detects workspace + suggests next steps
+```
+
 ## Status
 
-**Pre-0.1.0 scaffold.** The workspace structure, CI, and release pipeline are in place. The actual implementation is underway — see [`docs/spec/11-version-roadmap.md`](docs/spec/11-version-roadmap.md) for the concrete 0.1 → 1.0 plan.
-
-You can clone, `cargo check`, and run `cargo test`, but nothing is wired up yet.
+**0.7 feature-complete.** Workspace discovery, content-hash bump planner, release engine (plan/approve/apply with rollback), policy engine with Luau sandbox + waivers, MCP server + BYO-API-key AI overlay (Anthropic / OpenAI / Gemini / Ollama), versiond JSON-RPC 2.0 daemon, TUI dashboard, cross-repo fleet orchestration with saga protocol — 280+ tests across 30 crates. See [`docs/spec/11-version-roadmap.md`](docs/spec/11-version-roadmap.md) for the 1.0 path.
 
 ## Docs
 

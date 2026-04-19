@@ -53,7 +53,7 @@ impl VersionxServer {
             .build();
         let mut impl_info = Implementation::new("versionx-mcp", env!("CARGO_PKG_VERSION"));
         impl_info.title = Some("Versionx MCP".into());
-        impl_info.website_url = Some("https://versionx.dev".into());
+        impl_info.website_url = Some("https://github.com/KodyDennon/versionx".into());
         info.server_info = impl_info;
         info.instructions = Some(
             "Versionx MCP server. Mutating tools (release_propose, release_apply, \

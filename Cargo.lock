@@ -5063,6 +5063,7 @@ dependencies = [
  "chrono",
  "clap",
  "clap_complete",
+ "directories",
  "indexmap",
  "predicates",
  "serde_json",
