@@ -677,6 +677,7 @@ fn render_core_error(err: &versionx_core::CoreError, output: OutputFormat, cmd: 
         E::Io { .. } | E::Serialize(_) | E::State(_) | E::Lockfile(_) | E::Paths(_) => (4, "io"),
         E::UnknownRuntime(_) | E::RuntimeNotPinned { .. } => (5, "runtime"),
         E::Installer(_) => (6, "installer"),
+        E::Adapter(_) => (7, "adapter"),
     };
     match output {
         OutputFormat::Json | OutputFormat::Ndjson => {
@@ -771,6 +772,7 @@ fn render_init_error(err: &versionx_core::CoreError, output: OutputFormat) -> Ex
         E::Io { .. } | E::Serialize(_) | E::State(_) | E::Lockfile(_) | E::Paths(_) => 4,
         E::UnknownRuntime(_) | E::RuntimeNotPinned { .. } => 5,
         E::Installer(_) => 6,
+        E::Adapter(_) => 7,
     };
 
     match output {
@@ -799,6 +801,7 @@ const fn error_kind(err: &versionx_core::CoreError) -> &'static str {
         E::RuntimeNotPinned { .. } => "runtime_not_pinned",
         E::Config(_) => "config",
         E::Installer(_) => "installer",
+        E::Adapter(_) => "adapter",
         E::State(_) => "state",
         E::Lockfile(_) => "lockfile",
         E::Paths(_) => "paths",

@@ -40,6 +40,10 @@ pub enum CoreError {
     #[error(transparent)]
     Installer(#[from] versionx_runtime_trait::InstallerError),
 
+    /// Underlying adapter failure.
+    #[error(transparent)]
+    Adapter(#[from] versionx_adapter_trait::AdapterError),
+
     /// State DB failure.
     #[error(transparent)]
     State(#[from] versionx_state::StateError),

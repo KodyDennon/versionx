@@ -15,6 +15,8 @@
 
 #![deny(unsafe_code)]
 
+pub mod pm;
+
 use async_trait::async_trait;
 use camino::Utf8PathBuf;
 use chrono::Utc;
@@ -26,6 +28,8 @@ use versionx_runtime_trait::{
     Os, Platform, ResolvedVersion, RuntimeInstaller, ShimEntry, VersionSpec,
     download::{download_to_file, download_to_memory, extract_tar, extract_zip, verify_sha256},
 };
+
+pub use pm::{PnpmInstaller, YarnInstaller};
 
 /// Default index URL. Overridable via the `NODEJS_MIRROR` env var.
 pub const DEFAULT_INDEX_URL: &str = "https://nodejs.org/dist/index.json";

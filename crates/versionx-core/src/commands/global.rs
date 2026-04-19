@@ -148,6 +148,7 @@ mod tests {
             http: Client::new(),
             platform: Platform::detect(),
             registry: Arc::new(crate::runtime_registry::registry()),
+            adapter_registry: Arc::new(crate::adapter_registry::registry()),
         }
     }
 

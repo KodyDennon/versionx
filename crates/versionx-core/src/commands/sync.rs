@@ -2,7 +2,8 @@
 
 use camino::Utf8PathBuf;
 use serde::Serialize;
-use versionx_lockfile::{LockedRuntime, Lockfile, blake3_hex};
+use versionx_adapter_trait::{AdapterContext, Intent};
+use versionx_lockfile::{LockedEcosystem, LockedRuntime, Lockfile, blake3_hex};
 use versionx_runtime_trait::{InstallOutcome as InstallerOutcome, VersionSpec};
 
 use super::{CoreContext, shim_install};
@@ -24,6 +25,17 @@ pub struct SyncOutcome {
     pub installed: Vec<InstalledRuntime>,
     pub shims: Vec<String>,
     pub skipped: Vec<String>,
+    pub ecosystems: Vec<EcosystemSync>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct EcosystemSync {
+    pub ecosystem: String,
+    pub package_manager: Option<String>,
+    pub skipped_reason: Option<String>,
+    pub step_preview: Option<String>,
+    pub duration_ms: u64,
+    pub exit_code: Option<i32>,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -40,6 +52,7 @@ pub struct InstalledRuntime {
 /// - [`CoreError::NoConfig`] if no `versionx.toml` at the root.
 /// - [`CoreError::UnknownRuntime`] if `[runtimes]` names a tool we can't install.
 /// - [`CoreError::Installer`] on any installer-layer failure.
+#[allow(clippy::too_many_lines)] // Orchestrator — breaking it up obscures the linear flow.
 pub async fn sync(ctx: &CoreContext, opts: &SyncOptions) -> CoreResult<SyncOutcome> {
     let config_path = opts.root.join("versionx.toml");
     if !config_path.exists() {
@@ -147,6 +160,84 @@ pub async fn sync(ctx: &CoreContext, opts: &SyncOptions) -> CoreResult<SyncOutco
         }
     }
 
+    // Run each ecosystem adapter after runtimes are in place. Skips adapters
+    // that say `applicable = false` (e.g. no package.json in the repo).
+    let mut ecosystems = Vec::new();
+    for (eco_id, _eco_cfg) in &effective.config.ecosystems {
+        let Some(adapter) = ctx.adapter_registry.get(eco_id) else {
+            ecosystems.push(EcosystemSync {
+                ecosystem: eco_id.clone(),
+                package_manager: None,
+                skipped_reason: Some("no adapter for this ecosystem in 0.1.0".into()),
+                step_preview: None,
+                duration_ms: 0,
+                exit_code: None,
+            });
+            continue;
+        };
+
+        let runtime_bin_dir = runtime_bin_dir_for(ctx, eco_id);
+        let adapter_ctx = AdapterContext {
+            cwd: opts.root.clone(),
+            runtime_bin_dir,
+            events: ctx.events.clone(),
+            env: Vec::new(),
+            dry_run: opts.dry_run,
+        };
+
+        let detect = adapter.detect(&adapter_ctx).await?;
+        if !detect.applicable {
+            ecosystems.push(EcosystemSync {
+                ecosystem: eco_id.clone(),
+                package_manager: None,
+                skipped_reason: Some("adapter reported not-applicable at this cwd".into()),
+                step_preview: None,
+                duration_ms: 0,
+                exit_code: None,
+            });
+            continue;
+        }
+
+        let intent = Intent::Sync;
+        let plan = adapter.plan(&adapter_ctx, &intent).await?;
+        let Some(first_step) = plan.steps.first().cloned() else {
+            ecosystems.push(EcosystemSync {
+                ecosystem: eco_id.clone(),
+                package_manager: detect.package_manager.clone(),
+                skipped_reason: Some("empty plan".into()),
+                step_preview: None,
+                duration_ms: 0,
+                exit_code: None,
+            });
+            continue;
+        };
+
+        let outcome = adapter.execute(&adapter_ctx, &first_step, &intent).await?;
+        ecosystems.push(EcosystemSync {
+            ecosystem: eco_id.clone(),
+            package_manager: detect.package_manager.clone(),
+            skipped_reason: None,
+            step_preview: Some(first_step.command_preview.clone()),
+            duration_ms: outcome.duration_ms,
+            exit_code: outcome.exit_code,
+        });
+
+        // Record the ecosystem in the lockfile.
+        lock.ecosystems.insert(
+            eco_id.clone(),
+            LockedEcosystem {
+                package_manager: detect.package_manager.unwrap_or_default(),
+                native_lockfile: detect
+                    .manifest_path
+                    .as_ref()
+                    .and_then(|p| p.file_name())
+                    .map(ToString::to_string),
+                native_lockfile_hash: None,
+                resolved_at: Some(chrono::Utc::now()),
+            },
+        );
+    }
+
     // Write the lockfile even on dry-run so users can diff.
     let lockfile_path = opts.root.join("versionx.lock");
     lock.save(&lockfile_path)?;
@@ -158,5 +249,19 @@ pub async fn sync(ctx: &CoreContext, opts: &SyncOptions) -> CoreResult<SyncOutco
         state.mark_repo_synced(repo.id, &config_hash)?;
     }
 
-    Ok(SyncOutcome { config_hash, lockfile_path, installed, shims: all_shims, skipped })
+    Ok(SyncOutcome { config_hash, lockfile_path, installed, shims: all_shims, skipped, ecosystems })
+}
+
+/// Locate the bin dir of the pinned package manager for a given ecosystem.
+/// Returns `None` if the PM isn't a Versionx-managed runtime (the adapter
+/// will fall back to PATH in that case).
+fn runtime_bin_dir_for(ctx: &CoreContext, ecosystem: &str) -> Option<Utf8PathBuf> {
+    // For Node we want the PM's bin dir on PATH when we spawn it — but
+    // also Node's bin/ (pnpm on certain systems shells out to node).
+    // First approximation: prepend the shims dir, since that's where all
+    // of our installed PMs + their underlying runtimes resolve.
+    match ecosystem {
+        "node" | "python" | "rust" => Some(ctx.home.shims_dir()),
+        _ => None,
+    }
 }

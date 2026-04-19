@@ -7,6 +7,7 @@ use reqwest::Client;
 use versionx_events::{EventBus, EventSender};
 use versionx_runtime_trait::{InstallerContext, Platform};
 
+use crate::adapter_registry::{AdapterRegistry, registry as build_adapter_registry};
 use crate::error::CoreResult;
 use crate::paths::VersionxHome;
 use crate::runtime_registry::{RuntimeRegistry, registry};
@@ -19,6 +20,7 @@ pub struct CoreContext {
     pub http: Client,
     pub platform: Platform,
     pub registry: Arc<RuntimeRegistry>,
+    pub adapter_registry: Arc<AdapterRegistry>,
 }
 
 impl CoreContext {
@@ -46,6 +48,7 @@ impl CoreContext {
             http,
             platform: Platform::detect(),
             registry: Arc::new(registry()),
+            adapter_registry: Arc::new(build_adapter_registry()),
         })
     }
 

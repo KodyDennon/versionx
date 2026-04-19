@@ -4992,6 +4992,7 @@ dependencies = [
  "tokio",
  "toml_edit",
  "tracing",
+ "versionx-adapter-node",
  "versionx-adapter-trait",
  "versionx-config",
  "versionx-events",

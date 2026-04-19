@@ -7,11 +7,13 @@
 
 #![deny(unsafe_code)]
 
+pub mod adapter_registry;
 pub mod commands;
 pub mod error;
 pub mod paths;
 pub mod runtime_registry;
 
+pub use adapter_registry::{AdapterRegistry, registry as adapter_registry};
 pub use error::{CoreError, CoreResult};
 pub use paths::VersionxHome;
 pub use runtime_registry::{RuntimeRegistry, registry};
