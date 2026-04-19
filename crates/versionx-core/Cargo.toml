@@ -20,14 +20,23 @@ thiserror.workspace = true
 tracing.workspace = true
 serde = { workspace = true }
 serde_json.workspace = true
-camino.workspace = true
+camino = { workspace = true, features = ["serde1"] }
+chrono = { workspace = true }
 blake3.workspace = true
+hex.workspace = true
+reqwest = { workspace = true }
+directories.workspace = true
+indexmap = { workspace = true }
 versionx-config.workspace = true
 versionx-lockfile.workspace = true
 versionx-state.workspace = true
 versionx-events.workspace = true
 versionx-adapter-trait.workspace = true
 versionx-runtime-trait.workspace = true
+versionx-runtime-node.workspace = true
+versionx-runtime-python.workspace = true
+versionx-runtime-rust.workspace = true
+which.workspace = true
 
 [dev-dependencies]
 tempfile.workspace = true

@@ -21,7 +21,9 @@ reqwest = { workspace = true }
 serde = { workspace = true }
 camino.workspace = true
 tracing.workspace = true
+chrono = { workspace = true }
 semver.workspace = true
+which.workspace = true
 versionx-runtime-trait.workspace = true
 versionx-events.workspace = true
 

@@ -9,8 +9,12 @@
 
 pub mod commands;
 pub mod error;
+pub mod paths;
+pub mod runtime_registry;
 
 pub use error::{CoreError, CoreResult};
+pub use paths::VersionxHome;
+pub use runtime_registry::{RuntimeRegistry, registry};
 pub use versionx_events::{Event, EventBus, EventSender, Level};
 
 /// Crate version as declared in `Cargo.toml`.

@@ -57,6 +57,7 @@ versionx-runtime-trait   = { path = "crates/versionx-runtime-trait",   version =
 versionx-runtime-node    = { path = "crates/versionx-runtime-node",    version = "0.1.0-dev" }
 versionx-runtime-python  = { path = "crates/versionx-runtime-python",  version = "0.1.0-dev" }
 versionx-runtime-rust    = { path = "crates/versionx-runtime-rust",    version = "0.1.0-dev" }
+versionx-shim            = { path = "crates/versionx-shim",            version = "0.1.0-dev" }
 versionx-config          = { path = "crates/versionx-config",          version = "0.1.0-dev" }
 versionx-lockfile        = { path = "crates/versionx-lockfile",        version = "0.1.0-dev" }
 versionx-state           = { path = "crates/versionx-state",           version = "0.1.0-dev" }

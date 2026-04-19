@@ -6,10 +6,6 @@ use thiserror::Error;
 pub type CoreResult<T> = Result<T, CoreError>;
 
 /// Every fallible operation in `versionx-core` returns one of these variants.
-///
-/// Deliberately coarse: the CLI / MCP / daemon all render `CoreError`
-/// uniformly, so variants match the user-visible failure modes, not the
-/// low-level subsystem source.
 #[derive(Debug, Error)]
 pub enum CoreError {
     /// The user tried to run a mutating command without a config present
@@ -28,9 +24,33 @@ pub enum CoreError {
     )]
     NoEcosystemsDetected { path: String },
 
+    /// User asked for a runtime we don't have an installer for.
+    #[error("no installer for runtime `{0}` (try `node`, `python`, `rust`)")]
+    UnknownRuntime(String),
+
+    /// User didn't pin a runtime this command needs.
+    #[error("no pinned version for `{tool}` — set `[runtimes] {tool} = \"...\"` in versionx.toml")]
+    RuntimeNotPinned { tool: String },
+
     /// Underlying config load/parse failure.
     #[error(transparent)]
     Config(#[from] versionx_config::ConfigError),
+
+    /// Underlying runtime install failure.
+    #[error(transparent)]
+    Installer(#[from] versionx_runtime_trait::InstallerError),
+
+    /// State DB failure.
+    #[error(transparent)]
+    State(#[from] versionx_state::StateError),
+
+    /// Lockfile failure.
+    #[error(transparent)]
+    Lockfile(#[from] versionx_lockfile::LockfileError),
+
+    /// Path resolution failure.
+    #[error(transparent)]
+    Paths(#[from] crate::paths::PathDetectionError),
 
     /// I/O failure with path context.
     #[error("i/o error at {path}: {source}")]

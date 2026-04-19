@@ -17,7 +17,11 @@ use camino::Utf8PathBuf;
 use clap::{Parser, Subcommand, ValueEnum};
 use tracing_subscriber::{EnvFilter, fmt, prelude::*};
 use versionx_core::EventBus;
-use versionx_core::commands::init as core_init;
+use versionx_core::commands::{
+    self as core_cmds, ActivateOptions as CoreActivate, CoreContext,
+    InstallOptions as CoreInstallOpts, Shell as CoreShell, SyncOptions as CoreSyncOpts,
+    WhichOptions as CoreWhichOpts, init as core_init,
+};
 
 /// Command-line interface for Versionx, the polyglot version manager +
 /// release orchestrator.
@@ -283,12 +287,12 @@ fn dispatch(cli: Cli) -> Result<ExitCode> {
 
     match command {
         Command::Init(args) => run_init(&args, cli.cwd.as_deref(), cli.output),
-        Command::Sync(_) => not_yet("sync", "0.1.0"),
+        Command::Sync(args) => block_on(run_sync(args, cli.cwd.as_deref(), cli.output)),
         Command::Verify => not_yet("verify", "0.1.0"),
         Command::Status => status_stub(cli.output),
-        Command::Install(_) => not_yet("install", "0.1.0"),
-        Command::Which { .. } => not_yet("which", "0.1.0"),
-        Command::Activate(_) => not_yet("activate", "0.3.0"),
+        Command::Install(args) => block_on(run_install(args, cli.output)),
+        Command::Which { tool } => block_on(run_which(tool, cli.cwd.as_deref(), cli.output)),
+        Command::Activate(args) => run_activate(args.shell, cli.output),
         Command::Runtime(_) => not_yet("runtime", "0.1.0"),
         Command::Daemon(_) => not_yet("daemon", "0.3.0"),
         Command::Tui => not_yet("tui", "0.3.0"),
@@ -296,6 +300,177 @@ fn dispatch(cli: Cli) -> Result<ExitCode> {
         Command::Policy(_) => not_yet("policy", "0.5.0"),
         Command::Mcp(_) => not_yet("mcp", "0.6.0"),
     }
+}
+
+/// Build a short-lived tokio runtime for commands that need async.
+fn block_on<F: std::future::Future<Output = Result<ExitCode>>>(fut: F) -> Result<ExitCode> {
+    let rt = tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()
+        .context("building tokio runtime")?;
+    rt.block_on(fut)
+}
+
+/// Set up a bus + context. Returns both so the caller can keep the bus alive.
+fn core_ctx() -> Result<(EventBus, CoreContext)> {
+    let bus = EventBus::new();
+    let ctx = CoreContext::detect(bus.sender())?;
+    Ok((bus, ctx))
+}
+
+async fn run_sync(
+    args: SyncArgs,
+    cwd: Option<&camino::Utf8Path>,
+    output: OutputFormat,
+) -> Result<ExitCode> {
+    let root = resolve_cwd(cwd)?;
+    let (_bus, ctx) = core_ctx()?;
+    let opts = CoreSyncOpts { root, dry_run: args.plan_only };
+
+    let outcome = match core_cmds::sync(&ctx, &opts).await {
+        Ok(o) => o,
+        Err(err) => return Ok(render_core_error(&err, output, "sync")),
+    };
+
+    match output {
+        OutputFormat::Json | OutputFormat::Ndjson => {
+            let mut stdout = io::stdout().lock();
+            serde_json::to_writer(&mut stdout, &outcome)?;
+            stdout.write_all(b"\n")?;
+        }
+        OutputFormat::Human => {
+            println!("Synced — lockfile at {}", outcome.lockfile_path);
+            for rt in &outcome.installed {
+                let state = if rt.already_installed { "cached" } else { "installed" };
+                println!("  {state} {} {} ({})", rt.tool, rt.version, rt.source);
+            }
+            if !outcome.shims.is_empty() {
+                println!("  Shims: {}", outcome.shims.join(", "));
+            }
+            for skip in &outcome.skipped {
+                eprintln!("  skipped {skip}");
+            }
+        }
+    }
+    Ok(ExitCode::from(0))
+}
+
+async fn run_install(args: InstallArgs, output: OutputFormat) -> Result<ExitCode> {
+    let (_bus, ctx) = core_ctx()?;
+    let opts = CoreInstallOpts {
+        tool: args.tool.clone(),
+        version: args.version.clone(),
+        skip_shims: false,
+    };
+
+    let outcome = match core_cmds::install(&ctx, &opts).await {
+        Ok(o) => o,
+        Err(err) => return Ok(render_core_error(&err, output, "install")),
+    };
+
+    match output {
+        OutputFormat::Json | OutputFormat::Ndjson => {
+            let mut stdout = io::stdout().lock();
+            serde_json::to_writer(&mut stdout, &outcome)?;
+            stdout.write_all(b"\n")?;
+        }
+        OutputFormat::Human => {
+            let state = if outcome.already_installed { "already installed" } else { "installed" };
+            println!("{state} {} {} ({})", outcome.tool, outcome.resolved_version, outcome.source);
+            println!("  path: {}", outcome.install_path);
+            if let Some(sha) = &outcome.sha256 {
+                println!("  sha256: {sha}");
+            }
+            if !outcome.shims.is_empty() {
+                println!("  shims: {}", outcome.shims.join(", "));
+            }
+        }
+    }
+    Ok(ExitCode::from(0))
+}
+
+async fn run_which(
+    tool: String,
+    cwd: Option<&camino::Utf8Path>,
+    output: OutputFormat,
+) -> Result<ExitCode> {
+    let root = resolve_cwd(cwd)?;
+    let (_bus, ctx) = core_ctx()?;
+    let opts = CoreWhichOpts { tool, cwd: root };
+
+    let outcome = match core_cmds::which(&ctx, &opts).await {
+        Ok(o) => o,
+        Err(err) => return Ok(render_core_error(&err, output, "which")),
+    };
+
+    match output {
+        OutputFormat::Json | OutputFormat::Ndjson => {
+            let mut stdout = io::stdout().lock();
+            serde_json::to_writer(&mut stdout, &outcome)?;
+            stdout.write_all(b"\n")?;
+        }
+        OutputFormat::Human => {
+            if let Some(bin) = &outcome.binary {
+                println!("{bin}");
+                println!("  version: {}", outcome.resolved_version.clone().unwrap_or_default());
+                println!("  reason: {}", outcome.reason);
+            } else if let Some(v) = outcome.resolved_version {
+                println!("version: {v}");
+                println!("reason: {}", outcome.reason);
+            } else {
+                println!("unresolved: {}", outcome.reason);
+                return Ok(ExitCode::from(1));
+            }
+        }
+    }
+    Ok(ExitCode::from(0))
+}
+
+fn run_activate(shell: Shell, output: OutputFormat) -> Result<ExitCode> {
+    let (_bus, ctx) = core_ctx()?;
+    let core_shell = match shell {
+        Shell::Bash => CoreShell::Bash,
+        Shell::Zsh => CoreShell::Zsh,
+        Shell::Fish => CoreShell::Fish,
+        Shell::Pwsh => CoreShell::Pwsh,
+    };
+    let snippet = core_cmds::activate(&ctx, &CoreActivate { shell: core_shell })?;
+
+    match output {
+        OutputFormat::Json | OutputFormat::Ndjson => {
+            let payload = serde_json::json!({ "shell": format!("{shell:?}"), "snippet": snippet });
+            let mut stdout = io::stdout().lock();
+            serde_json::to_writer(&mut stdout, &payload)?;
+            stdout.write_all(b"\n")?;
+        }
+        OutputFormat::Human => {
+            print!("{snippet}");
+        }
+    }
+    Ok(ExitCode::from(0))
+}
+
+fn render_core_error(err: &versionx_core::CoreError, output: OutputFormat, cmd: &str) -> ExitCode {
+    use versionx_core::CoreError as E;
+    let (code, kind): (u8, &str) = match err {
+        E::ConfigAlreadyExists { .. } | E::NoConfig { .. } => (1, "user_error"),
+        E::Config(_) => (2, "config"),
+        E::NoEcosystemsDetected { .. } => (3, "no_ecosystems_detected"),
+        E::Io { .. } | E::Serialize(_) | E::State(_) | E::Lockfile(_) | E::Paths(_) => (4, "io"),
+        E::UnknownRuntime(_) | E::RuntimeNotPinned { .. } => (5, "runtime"),
+        E::Installer(_) => (6, "installer"),
+    };
+    match output {
+        OutputFormat::Json | OutputFormat::Ndjson => {
+            let payload =
+                serde_json::json!({"error": format!("{err}"), "kind": kind, "exit_code": code});
+            eprintln!("{payload}");
+        }
+        OutputFormat::Human => {
+            eprintln!("versionx {cmd}: {err}");
+        }
+    }
+    ExitCode::from(code)
 }
 
 /// Resolve the working directory for a command. Uses `--cwd` if given,
@@ -371,11 +546,13 @@ fn render_init_error(err: &versionx_core::CoreError, output: OutputFormat) -> Ex
     use versionx_core::CoreError as E;
 
     // Exit code map: 1 = user error, 2 = config error, 3 = no ecosystems, 4 = i/o.
-    let code = match err {
+    let code: u8 = match err {
         E::ConfigAlreadyExists { .. } | E::NoConfig { .. } => 1,
         E::Config(_) => 2,
         E::NoEcosystemsDetected { .. } => 3,
-        E::Io { .. } | E::Serialize(_) => 4,
+        E::Io { .. } | E::Serialize(_) | E::State(_) | E::Lockfile(_) | E::Paths(_) => 4,
+        E::UnknownRuntime(_) | E::RuntimeNotPinned { .. } => 5,
+        E::Installer(_) => 6,
     };
 
     match output {
@@ -400,7 +577,13 @@ const fn error_kind(err: &versionx_core::CoreError) -> &'static str {
         E::NoConfig { .. } => "no_config",
         E::ConfigAlreadyExists { .. } => "config_already_exists",
         E::NoEcosystemsDetected { .. } => "no_ecosystems_detected",
+        E::UnknownRuntime(_) => "unknown_runtime",
+        E::RuntimeNotPinned { .. } => "runtime_not_pinned",
         E::Config(_) => "config",
+        E::Installer(_) => "installer",
+        E::State(_) => "state",
+        E::Lockfile(_) => "lockfile",
+        E::Paths(_) => "paths",
         E::Io { .. } => "io",
         E::Serialize(_) => "serialize",
     }
