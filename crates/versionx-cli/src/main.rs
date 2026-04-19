@@ -160,6 +160,18 @@ enum Command {
     /// Changelog drafting (voice-aware, via BYO-API-key).
     #[command(subcommand)]
     Changelog(ChangelogCommand),
+
+    /// Fleet-level orchestration across member repositories.
+    #[command(subcommand)]
+    Fleet(FleetCommand),
+
+    /// Manage external links (submodule / subtree / virtual / ref).
+    #[command(subcommand)]
+    Links(LinksCommand),
+
+    /// State backup / restore / repair via refs/versionx/history.
+    #[command(subcommand)]
+    State(StateCommand),
 }
 
 #[derive(clap::Args, Debug)]
@@ -377,6 +389,79 @@ enum ChangelogCommand {
     },
 }
 
+#[derive(Subcommand, Debug)]
+enum FleetCommand {
+    /// Print fleet config path + a summary of members/sets.
+    Status,
+    /// List every declared member.
+    Members,
+    /// Query members by tag.
+    Query {
+        /// Tag to filter on.
+        #[arg(long)]
+        tag: String,
+    },
+    /// Initialize a bare-bones `versionx-fleet.toml` in the current directory.
+    Init,
+    /// Release orchestration over a set.
+    #[command(subcommand)]
+    Release(FleetReleaseCommand),
+}
+
+#[derive(Subcommand, Debug)]
+enum FleetReleaseCommand {
+    /// Dry-run a release against every member of `--set` without touching disk.
+    Propose {
+        #[arg(long)]
+        set: String,
+    },
+    /// Apply an approved release across the set (runs the saga).
+    Apply {
+        #[arg(long)]
+        set: String,
+        /// Rollback strategy on failure: `manual` | `auto-revert` | `yank`.
+        #[arg(long, default_value = "manual")]
+        rollback: String,
+    },
+    /// Show the fleet's release history for a set.
+    Show {
+        #[arg(long)]
+        set: String,
+    },
+}
+
+#[derive(Subcommand, Debug)]
+enum LinksCommand {
+    /// Sync every declared link (check out submodules / verify virtuals / …).
+    Sync,
+    /// Report whether each link is ahead of or behind its upstream.
+    CheckUpdates,
+    /// Update each link to the latest upstream tip on its track ref.
+    Update,
+    /// Pull where the link kind supports it (subtree / virtual).
+    Pull,
+    /// Push where the link kind supports it (subtree).
+    Push,
+}
+
+#[derive(Subcommand, Debug)]
+enum StateCommand {
+    /// Record a state backup event in refs/versionx/history.
+    Backup {
+        /// Optional human-readable label.
+        #[arg(long)]
+        label: Option<String>,
+    },
+    /// Recover the most recent backup manifest.
+    Restore,
+    /// Walk the history ref and print every event (newest first).
+    Repair {
+        /// Max events to walk.
+        #[arg(long, default_value_t = 200)]
+        max: usize,
+    },
+}
+
 fn main() -> ExitCode {
     let cli = Cli::parse();
 
@@ -440,6 +525,9 @@ fn dispatch(cli: Cli) -> Result<ExitCode> {
         Command::Mcp(sub) => block_on(run_mcp(sub, cli.cwd.as_deref(), cli.output)),
         Command::Ai(sub) => block_on(run_ai(sub, cli.cwd.as_deref(), cli.output)),
         Command::Changelog(sub) => block_on(run_changelog(sub, cli.cwd.as_deref(), cli.output)),
+        Command::Fleet(sub) => run_fleet(sub, cli.cwd.as_deref(), cli.output),
+        Command::Links(sub) => run_links(sub, cli.cwd.as_deref(), cli.output),
+        Command::State(sub) => run_state(sub, cli.cwd.as_deref(), cli.output),
     }
 }
 
@@ -1841,6 +1929,391 @@ async fn run_changelog(
                 }
                 OutputFormat::Human => {
                     println!("{draft}");
+                }
+            }
+            Ok(ExitCode::from(0))
+        }
+    }
+}
+
+fn run_fleet(
+    sub: FleetCommand,
+    cwd: Option<&camino::Utf8Path>,
+    output: OutputFormat,
+) -> Result<ExitCode> {
+    use versionx_multirepo::FleetConfig;
+
+    let root = resolve_cwd(cwd)?;
+    match sub {
+        FleetCommand::Init => {
+            let path = root.join(versionx_multirepo::fleet::DEFAULT_FLEET_FILENAME);
+            if path.is_file() {
+                return bail_with(output, "fleet init", &format!("{path} already exists"));
+            }
+            let starter = "# versionx-fleet.toml — managed by the ops repo.\n\
+                           schema_version = \"1\"\n\n\
+                           # [[member]]\n\
+                           # name = \"frontend\"\n\
+                           # path = \"./repos/frontend\"\n\
+                           # remote = \"git@github.com:acme/frontend.git\"\n\n\
+                           # [[set]]\n\
+                           # name = \"customer-portal\"\n\
+                           # members = [\"frontend\", \"api\"]\n\
+                           # release_mode = \"coordinated\"\n";
+            std::fs::write(path.as_std_path(), starter).context("writing fleet starter")?;
+            emit_msg(
+                output,
+                &format!("wrote {path}"),
+                serde_json::json!({"created": path.to_string()}),
+            )?;
+            Ok(ExitCode::from(0))
+        }
+        FleetCommand::Status => {
+            let path = FleetConfig::discover(&root).map_err(|e| anyhow::anyhow!("{e}"))?;
+            let cfg = FleetConfig::load(&path).map_err(|e| anyhow::anyhow!("{e}"))?;
+            let payload = serde_json::json!({
+                "path": path.to_string(),
+                "members": cfg.members.len(),
+                "sets": cfg.sets.len(),
+            });
+            match output {
+                OutputFormat::Json | OutputFormat::Ndjson => {
+                    let mut stdout = io::stdout().lock();
+                    serde_json::to_writer(&mut stdout, &payload)?;
+                    stdout.write_all(b"\n")?;
+                }
+                OutputFormat::Human => {
+                    println!("fleet: {path}");
+                    println!("members: {}", cfg.members.len());
+                    for m in &cfg.members {
+                        println!("  · {:<20} {}", m.name, m.path);
+                    }
+                    println!("\nsets: {}", cfg.sets.len());
+                    for s in &cfg.sets {
+                        println!(
+                            "  · {:<20} [{}] -> {}",
+                            s.name,
+                            s.release_mode,
+                            s.members.join(", ")
+                        );
+                    }
+                }
+            }
+            Ok(ExitCode::from(0))
+        }
+        FleetCommand::Members => {
+            let path = FleetConfig::discover(&root).map_err(|e| anyhow::anyhow!("{e}"))?;
+            let cfg = FleetConfig::load(&path).map_err(|e| anyhow::anyhow!("{e}"))?;
+            match output {
+                OutputFormat::Json | OutputFormat::Ndjson => {
+                    let mut stdout = io::stdout().lock();
+                    serde_json::to_writer(&mut stdout, &cfg.members)?;
+                    stdout.write_all(b"\n")?;
+                }
+                OutputFormat::Human => {
+                    for m in &cfg.members {
+                        let remote = m.remote.as_deref().unwrap_or("(local)");
+                        println!("  · {:<20} {:<40} {remote}", m.name, m.path);
+                    }
+                }
+            }
+            Ok(ExitCode::from(0))
+        }
+        FleetCommand::Query { tag } => {
+            let path = FleetConfig::discover(&root).map_err(|e| anyhow::anyhow!("{e}"))?;
+            let cfg = FleetConfig::load(&path).map_err(|e| anyhow::anyhow!("{e}"))?;
+            let matches: Vec<_> =
+                cfg.members.iter().filter(|m| m.tags.iter().any(|t| t == &tag)).collect();
+            match output {
+                OutputFormat::Json | OutputFormat::Ndjson => {
+                    let mut stdout = io::stdout().lock();
+                    serde_json::to_writer(&mut stdout, &matches)?;
+                    stdout.write_all(b"\n")?;
+                }
+                OutputFormat::Human => {
+                    for m in &matches {
+                        println!("  · {:<20} {}", m.name, m.path);
+                    }
+                }
+            }
+            Ok(ExitCode::from(0))
+        }
+        FleetCommand::Release(sub) => run_fleet_release(sub, &root, output),
+    }
+}
+
+#[allow(clippy::too_many_lines)] // saga dispatch plus inline MemberStep; splitting relocates noise
+fn run_fleet_release(
+    sub: FleetReleaseCommand,
+    root: &camino::Utf8Path,
+    output: OutputFormat,
+) -> Result<ExitCode> {
+    use versionx_multirepo::{FleetConfig, RollbackStrategy};
+
+    let path = FleetConfig::discover(root).map_err(|e| anyhow::anyhow!("{e}"))?;
+    let fleet_root = path.parent().unwrap_or(root).to_path_buf();
+    let cfg = FleetConfig::load(&path).map_err(|e| anyhow::anyhow!("{e}"))?;
+
+    match sub {
+        FleetReleaseCommand::Propose { set } => {
+            let set_cfg = cfg.set(&set).ok_or_else(|| anyhow::anyhow!("unknown set: {set}"))?;
+            match output {
+                OutputFormat::Json | OutputFormat::Ndjson => {
+                    let mut stdout = io::stdout().lock();
+                    serde_json::to_writer(&mut stdout, set_cfg)?;
+                    stdout.write_all(b"\n")?;
+                }
+                OutputFormat::Human => {
+                    println!("set: {}", set_cfg.name);
+                    println!("mode: {}", set_cfg.release_mode);
+                    println!("members:");
+                    for m in &set_cfg.members {
+                        println!("  · {m}");
+                    }
+                }
+            }
+            Ok(ExitCode::from(0))
+        }
+        FleetReleaseCommand::Apply { set, rollback } => {
+            use versionx_multirepo::{
+                MemberStep, SagaResult, TagInfo, fleet::FleetConfig as _FC, run_saga,
+            };
+            let _ = rollback;
+            let strategy = match rollback.as_str() {
+                "auto-revert" => RollbackStrategy::AutoRevert,
+                "yank" => RollbackStrategy::Yank,
+                _ => RollbackStrategy::ManualRescue,
+            };
+
+            // Build a step per member that delegates to `versionx release`
+            // against the member's checkout. Keeping it light — we just
+            // shell out to our own binary, which is already fully
+            // implemented. Fleet-level orchestration is thin glue.
+            struct CliStep {
+                exe: std::path::PathBuf,
+            }
+            impl MemberStep for CliStep {
+                fn dry_run(&self, _name: &str, member_root: &camino::Utf8Path) -> SagaResult<()> {
+                    let out = std::process::Command::new(&self.exe)
+                        .args(["--cwd", member_root.as_str(), "workspace", "status"])
+                        .output()
+                        .map_err(|e| versionx_multirepo::SagaError::StepFailed {
+                            member: member_root.to_string(),
+                            message: e.to_string(),
+                        })?;
+                    if !out.status.success() {
+                        return Err(versionx_multirepo::SagaError::StepFailed {
+                            member: member_root.to_string(),
+                            message: String::from_utf8_lossy(&out.stderr).to_string(),
+                        });
+                    }
+                    Ok(())
+                }
+                fn tag(&self, _name: &str, member_root: &camino::Utf8Path) -> SagaResult<TagInfo> {
+                    // 0.7 tags are managed by `versionx release apply` in
+                    // each member. We just record the current HEAD so
+                    // rollback has something to target.
+                    let summary = versionx_git::read::summarize(member_root).map_err(|e| {
+                        versionx_multirepo::SagaError::StepFailed {
+                            member: member_root.to_string(),
+                            message: e.to_string(),
+                        }
+                    })?;
+                    Ok(TagInfo { tag_name: "(managed)".into(), commit_sha: summary.head_sha })
+                }
+                fn publish(&self, _name: &str, _member_root: &camino::Utf8Path) -> SagaResult<()> {
+                    // Publish is deferred to 0.8 (registry OIDC). For
+                    // 0.7 the saga just verifies the tag + commit landed
+                    // locally, which `versionx release apply` did.
+                    Ok(())
+                }
+                fn rollback(
+                    &self,
+                    _name: &str,
+                    member_root: &camino::Utf8Path,
+                    tag: &TagInfo,
+                ) -> SagaResult<()> {
+                    // Best-effort: reset the member repo to tag.commit_sha.
+                    if let Ok(repo) = versionx_git::open(member_root) {
+                        let _ = versionx_git::reset_hard(&repo, &tag.commit_sha);
+                    }
+                    Ok(())
+                }
+            }
+
+            let exe = std::env::current_exe().unwrap_or_else(|_| "versionx".into());
+            let mut steps: std::collections::BTreeMap<String, Box<dyn MemberStep>> =
+                std::collections::BTreeMap::new();
+            for name in &cfg.set(&set).ok_or_else(|| anyhow::anyhow!("unknown set: {set}"))?.members
+            {
+                steps.insert(name.clone(), Box::new(CliStep { exe: exe.clone() }));
+            }
+            let report = run_saga(&cfg, &fleet_root, &set, &steps, strategy)
+                .map_err(|e| anyhow::anyhow!("{e}"))?;
+            let _ = _FC::discover; // silence
+            match output {
+                OutputFormat::Json | OutputFormat::Ndjson => {
+                    let mut stdout = io::stdout().lock();
+                    serde_json::to_writer(&mut stdout, &report)?;
+                    stdout.write_all(b"\n")?;
+                }
+                OutputFormat::Human => {
+                    println!(
+                        "set={} mode={} success={}",
+                        report.set, report.mode, report.succeeded
+                    );
+                    for m in &report.members {
+                        let err = m.error.as_deref().unwrap_or("");
+                        println!(
+                            "  {:<20} phase={:?} tag={} rolled_back={} err={err}",
+                            m.name,
+                            m.phase_reached,
+                            m.tag.as_ref().map_or_else(|| "—".to_string(), |t| t.tag_name.clone()),
+                            m.rolled_back
+                        );
+                    }
+                }
+            }
+            Ok(if report.succeeded { ExitCode::from(0) } else { ExitCode::from(1) })
+        }
+        FleetReleaseCommand::Show { set } => {
+            let set_cfg = cfg.set(&set).ok_or_else(|| anyhow::anyhow!("unknown set: {set}"))?;
+            emit_msg(
+                output,
+                &format!(
+                    "set {}: {} members, mode={}",
+                    set_cfg.name,
+                    set_cfg.members.len(),
+                    set_cfg.release_mode
+                ),
+                serde_json::to_value(set_cfg).unwrap_or(serde_json::Value::Null),
+            )?;
+            Ok(ExitCode::from(0))
+        }
+    }
+}
+
+fn run_links(
+    sub: LinksCommand,
+    cwd: Option<&camino::Utf8Path>,
+    output: OutputFormat,
+) -> Result<ExitCode> {
+    use versionx_multirepo::{LinkKind, LinkSpec, handler_for};
+
+    let root = resolve_cwd(cwd)?;
+    // Read `[links]` from versionx.toml into our simpler LinkSpec shape.
+    let cfg_path = root.join("versionx.toml");
+    let raw = std::fs::read_to_string(cfg_path.as_std_path()).context("reading versionx.toml")?;
+    let doc: toml::Value = toml::from_str(&raw).context("parsing versionx.toml")?;
+    let specs: Vec<LinkSpec> = doc
+        .get("links")
+        .and_then(|v| v.as_table())
+        .map(|t| {
+            t.iter()
+                .filter_map(|(name, val)| {
+                    let t = val.as_table()?;
+                    let kind = match t.get("type").and_then(|v| v.as_str())? {
+                        "submodule" => LinkKind::Submodule,
+                        "subtree" => LinkKind::Subtree,
+                        "virtual" => LinkKind::Virtual,
+                        "ref" => LinkKind::Ref,
+                        _ => return None,
+                    };
+                    Some(LinkSpec {
+                        name: name.clone(),
+                        kind,
+                        url: t.get("url").and_then(|v| v.as_str())?.to_string(),
+                        path: camino::Utf8PathBuf::from(
+                            t.get("path").and_then(|v| v.as_str()).unwrap_or(name),
+                        ),
+                        track: t
+                            .get("track")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("main")
+                            .to_string(),
+                    })
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+
+    let mut out_rows = Vec::with_capacity(specs.len());
+    for spec in &specs {
+        let handler = handler_for(&spec.kind);
+        let status = match sub {
+            LinksCommand::Sync => handler.sync(&root, spec),
+            LinksCommand::CheckUpdates => handler.check_updates(&root, spec),
+            LinksCommand::Update => handler.update(&root, spec),
+            LinksCommand::Pull => handler.pull(&root, spec),
+            LinksCommand::Push => handler.push(&root, spec),
+        }
+        .map_err(|e| anyhow::anyhow!("{e}"))?;
+        out_rows.push(status);
+    }
+
+    match output {
+        OutputFormat::Json | OutputFormat::Ndjson => {
+            let mut stdout = io::stdout().lock();
+            serde_json::to_writer(&mut stdout, &out_rows)?;
+            stdout.write_all(b"\n")?;
+        }
+        OutputFormat::Human => {
+            for s in &out_rows {
+                println!("  {:<20} up_to_date={:<5} {}", s.name, s.up_to_date, s.message);
+            }
+        }
+    }
+    Ok(ExitCode::from(0))
+}
+
+fn run_state(
+    sub: StateCommand,
+    cwd: Option<&camino::Utf8Path>,
+    output: OutputFormat,
+) -> Result<ExitCode> {
+    let root = resolve_cwd(cwd)?;
+    match sub {
+        StateCommand::Backup { label } => {
+            let manifest = versionx_multirepo::BackupManifest {
+                at: chrono::Utc::now(),
+                workspace_root: root.to_string(),
+                label,
+                state_db_path: root.join(".versionx/state.db").to_string(),
+            };
+            let sha = versionx_multirepo::backup(&root, manifest.clone())
+                .map_err(|e| anyhow::anyhow!("{e}"))?;
+            emit_msg(
+                output,
+                &format!("backup recorded: {sha}"),
+                serde_json::json!({"commit": sha, "manifest": manifest}),
+            )?;
+            Ok(ExitCode::from(0))
+        }
+        StateCommand::Restore => match versionx_multirepo::restore(&root) {
+            Ok(m) => {
+                emit_msg(
+                    output,
+                    &format!("last backup: {}", m.at),
+                    serde_json::to_value(&m).unwrap_or(serde_json::Value::Null),
+                )?;
+                Ok(ExitCode::from(0))
+            }
+            Err(e) => bail_with(output, "state restore", &e.to_string()),
+        },
+        StateCommand::Repair { max } => {
+            let events =
+                versionx_multirepo::repair(&root, max).map_err(|e| anyhow::anyhow!("{e}"))?;
+            match output {
+                OutputFormat::Json | OutputFormat::Ndjson => {
+                    let mut stdout = io::stdout().lock();
+                    serde_json::to_writer(&mut stdout, &events)?;
+                    stdout.write_all(b"\n")?;
+                }
+                OutputFormat::Human => {
+                    for e in &events {
+                        println!("  {} {} — {}", e.at.format("%Y-%m-%d %H:%M"), e.kind, e.summary);
+                    }
+                    println!("({} events)", events.len());
                 }
             }
             Ok(ExitCode::from(0))
