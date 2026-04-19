@@ -17,12 +17,15 @@ name: Release
 permissions:
   "contents": "write"
 
-# This task will run whenever you push to "main"
+# Triggered by tag pushes matching v*, by main-branch pushes (timestamped
+# pre-release snapshots), and by PRs against main (dist plan only).
 on:
   pull_request:
   push:
     branches:
       - "main"
+    tags:
+      - "v*"
 
 # don't let multiple instances of this run at the same time on the release branch
 concurrency:

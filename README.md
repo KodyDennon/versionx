@@ -13,10 +13,10 @@ Versionx unifies runtime/toolchain management (asdf/mise replacement), dependenc
 ```bash
 # macOS / Linux
 curl --proto '=https' --tlsv1.2 -LsSf \
-  https://github.com/KodyDennon/versionx/releases/latest/download/versionx-installer.sh | sh
+  https://github.com/KodyDennon/versionx/releases/latest/download/versionx-cli-installer.sh | sh
 
 # Windows (PowerShell)
-powershell -ExecutionPolicy ByPass -c "irm https://github.com/KodyDennon/versionx/releases/latest/download/versionx-installer.ps1 | iex"
+powershell -ExecutionPolicy ByPass -c "irm https://github.com/KodyDennon/versionx/releases/latest/download/versionx-cli-installer.ps1 | iex"
 ```
 
 Wire the shell hook once:
