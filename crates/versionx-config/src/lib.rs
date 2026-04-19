@@ -30,7 +30,8 @@ mod workspace;
 pub use error::{ConfigError, ConfigResult};
 pub use loader::{EffectiveConfig, load, load_from_str};
 pub use schema::{
-    AdvancedConfig, EcosystemConfig, InheritPolicy, LinksConfig, OutputOverride, ReleaseConfig,
-    RuntimeProviders, RuntimesConfig, VersionxConfig, VersionxMetaConfig,
+    AdvancedConfig, ComponentConfig, EcosystemConfig, InheritPolicy, LinksConfig, OutputOverride,
+    ReleaseConfig, ReleaseGroupConfig, RuntimeProviders, RuntimesConfig, VersionxConfig,
+    VersionxMetaConfig,
 };
 pub use workspace::{WorkspaceRoot, detect_workspace_root};

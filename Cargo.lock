@@ -4880,6 +4880,7 @@ name = "versionx-adapter-python"
 version = "0.1.0-dev"
 dependencies = [
  "async-trait",
+ "blake3",
  "camino",
  "semver",
  "serde",
@@ -4898,6 +4899,7 @@ name = "versionx-adapter-rust"
 version = "0.1.0-dev"
 dependencies = [
  "async-trait",
+ "blake3",
  "camino",
  "semver",
  "serde",
@@ -4942,6 +4944,7 @@ dependencies = [
  "camino",
  "clap",
  "clap_complete",
+ "indexmap",
  "predicates",
  "serde_json",
  "tempfile",
@@ -4985,6 +4988,7 @@ dependencies = [
  "insta",
  "pretty_assertions",
  "reqwest",
+ "semver",
  "serde",
  "serde_json",
  "tempfile",
@@ -4993,6 +4997,8 @@ dependencies = [
  "toml_edit",
  "tracing",
  "versionx-adapter-node",
+ "versionx-adapter-python",
+ "versionx-adapter-rust",
  "versionx-adapter-trait",
  "versionx-config",
  "versionx-events",
@@ -5002,6 +5008,7 @@ dependencies = [
  "versionx-runtime-rust",
  "versionx-runtime-trait",
  "versionx-state",
+ "versionx-workspace",
  "which",
 ]
 
@@ -5325,6 +5332,28 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "versionx-core",
+]
+
+[[package]]
+name = "versionx-workspace"
+version = "0.1.0-dev"
+dependencies = [
+ "blake3",
+ "camino",
+ "hex",
+ "indexmap",
+ "petgraph",
+ "pretty_assertions",
+ "regex",
+ "semver",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror 2.0.18",
+ "toml",
+ "toml_edit",
+ "tracing",
+ "versionx-config",
 ]
 
 [[package]]

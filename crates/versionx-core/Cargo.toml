@@ -37,7 +37,11 @@ versionx-runtime-node.workspace = true
 versionx-runtime-python.workspace = true
 versionx-runtime-rust.workspace = true
 versionx-adapter-node.workspace = true
+versionx-adapter-python.workspace = true
+versionx-adapter-rust.workspace = true
+versionx-workspace.workspace = true
 which.workspace = true
+semver = { workspace = true, features = ["serde"] }
 toml_edit.workspace = true
 
 [dev-dependencies]

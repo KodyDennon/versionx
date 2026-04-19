@@ -9,6 +9,8 @@ use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use versionx_adapter_node::NodeAdapter;
+use versionx_adapter_python::PythonAdapter;
+use versionx_adapter_rust::RustAdapter;
 use versionx_adapter_trait::PackageManagerAdapter;
 
 /// Immutable lookup table of adapters.
@@ -42,7 +44,11 @@ impl AdapterRegistry {
 pub fn registry() -> AdapterRegistry {
     let mut adapters: BTreeMap<&'static str, Arc<dyn PackageManagerAdapter>> = BTreeMap::new();
     let node: Arc<dyn PackageManagerAdapter> = Arc::new(NodeAdapter::new());
+    let python: Arc<dyn PackageManagerAdapter> = Arc::new(PythonAdapter::new());
+    let rust: Arc<dyn PackageManagerAdapter> = Arc::new(RustAdapter::new());
     adapters.insert(node.id(), node);
+    adapters.insert(python.id(), python);
+    adapters.insert(rust.id(), rust);
     AdapterRegistry { adapters }
 }
 
@@ -51,9 +57,11 @@ mod tests {
     use super::*;
 
     #[test]
-    fn has_node_adapter() {
+    fn has_node_python_rust_adapters() {
         let reg = registry();
         assert!(reg.get("node").is_some());
+        assert!(reg.get("python").is_some());
+        assert!(reg.get("rust").is_some());
         assert!(reg.get("cobol").is_none());
     }
 }

@@ -1,6 +1,7 @@
 //! User-facing command implementations.
 
 pub mod activate;
+pub mod bump;
 pub mod context;
 pub mod global;
 pub mod init;
@@ -10,6 +11,7 @@ pub mod shim_install;
 pub mod sync;
 pub mod verify;
 pub mod which;
+pub mod workspace;
 
 pub use activate::{ActivateOptions, Shell, activate};
 pub use context::CoreContext;

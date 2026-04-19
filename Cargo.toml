@@ -13,6 +13,7 @@ members = [
     "crates/versionx-adapter-node",
     "crates/versionx-adapter-python",
     "crates/versionx-adapter-rust",
+    "crates/versionx-workspace",
     "crates/versionx-runtime-trait",
     "crates/versionx-runtime-node",
     "crates/versionx-runtime-python",
@@ -53,6 +54,7 @@ versionx-adapter-trait   = { path = "crates/versionx-adapter-trait",   version =
 versionx-adapter-node    = { path = "crates/versionx-adapter-node",    version = "0.1.0-dev" }
 versionx-adapter-python  = { path = "crates/versionx-adapter-python",  version = "0.1.0-dev" }
 versionx-adapter-rust    = { path = "crates/versionx-adapter-rust",    version = "0.1.0-dev" }
+versionx-workspace       = { path = "crates/versionx-workspace",       version = "0.1.0-dev" }
 versionx-runtime-trait   = { path = "crates/versionx-runtime-trait",   version = "0.1.0-dev" }
 versionx-runtime-node    = { path = "crates/versionx-runtime-node",    version = "0.1.0-dev" }
 versionx-runtime-python  = { path = "crates/versionx-runtime-python",  version = "0.1.0-dev" }
@@ -151,7 +153,7 @@ shell-words = "1.1"
 os_str_bytes = "7.0"
 
 # Version / SemVer
-semver = "1.0"
+semver = { version = "1.0", features = ["serde"] }
 
 # DAG / graph
 petgraph = "0.6"

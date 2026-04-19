@@ -117,6 +117,15 @@ enum Command {
     #[command(subcommand)]
     Global(GlobalCommand),
 
+    /// Inspect your workspace — components, change state, dependency graph.
+    #[command(subcommand)]
+    Workspace(WorkspaceCommand),
+
+    /// Propose version bumps for every dirty component (+ cascade).
+    /// This is a preview of the 0.4 release orchestration: the plan is
+    /// printed but nothing is written.
+    Bump,
+
     /// Start or manage the `versiond` background daemon.
     #[command(subcommand)]
     Daemon(DaemonCommand),
@@ -199,6 +208,16 @@ enum RuntimeCommand {
         #[arg(long, default_value_t = true)]
         keep_latest: bool,
     },
+}
+
+#[derive(Subcommand, Debug)]
+enum WorkspaceCommand {
+    /// List every component discovered in this workspace.
+    List,
+    /// Report per-component change state (dirty / clean) vs. last release.
+    Status,
+    /// Print the dep DAG (nodes + edges + topological order).
+    Graph,
 }
 
 #[derive(Subcommand, Debug)]
@@ -317,8 +336,10 @@ fn dispatch(cli: Cli) -> Result<ExitCode> {
         Command::Activate(args) => run_activate(args.shell, cli.output),
         Command::Runtime(sub) => run_runtime(sub, cli.output),
         Command::Global(sub) => run_global(sub, cli.output),
+        Command::Workspace(sub) => run_workspace(sub, cli.cwd.as_deref(), cli.output),
+        Command::Bump => run_bump(cli.cwd.as_deref(), cli.output),
         Command::Daemon(_) => not_yet("daemon", "0.3.0"),
-        Command::Tui => not_yet("tui", "0.3.0"),
+        Command::Tui => run_tui(cli.cwd.as_deref()),
         Command::Release(_) => not_yet("release", "0.4.0"),
         Command::Policy(_) => not_yet("policy", "0.5.0"),
         Command::Mcp(_) => not_yet("mcp", "0.6.0"),
@@ -642,6 +663,185 @@ fn run_global(sub: GlobalCommand, output: OutputFormat) -> Result<ExitCode> {
         }
     }
     Ok(ExitCode::from(0))
+}
+
+#[allow(clippy::too_many_lines)] // three flat subcommand arms; splitting just pushes complexity around.
+fn run_workspace(
+    sub: WorkspaceCommand,
+    cwd: Option<&camino::Utf8Path>,
+    output: OutputFormat,
+) -> Result<ExitCode> {
+    use versionx_core::commands::workspace as ws;
+
+    let root = resolve_cwd(cwd)?;
+    let (_bus, ctx) = core_ctx()?;
+
+    match sub {
+        WorkspaceCommand::List => {
+            let outcome = match ws::list(&ctx, &ws::ListOptions { root }) {
+                Ok(o) => o,
+                Err(err) => return Ok(render_core_error(&err, output, "workspace list")),
+            };
+            match output {
+                OutputFormat::Json | OutputFormat::Ndjson => {
+                    let mut stdout = io::stdout().lock();
+                    serde_json::to_writer(&mut stdout, &outcome)?;
+                    stdout.write_all(b"\n")?;
+                }
+                OutputFormat::Human => {
+                    if outcome.components.is_empty() {
+                        println!("no components discovered at {}", outcome.workspace_root);
+                    } else {
+                        println!("workspace root: {}", outcome.workspace_root);
+                        for c in &outcome.components {
+                            let v = c.version.as_deref().unwrap_or("-");
+                            println!("  {:<8} {:<30} {:<10} {}", c.kind, c.id, v, c.root);
+                            if !c.depends_on.is_empty() {
+                                println!("      depends_on: {}", c.depends_on.join(", "));
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        WorkspaceCommand::Status => {
+            let outcome = match ws::status(&ctx, &ws::StatusOptions { root }) {
+                Ok(o) => o,
+                Err(err) => return Ok(render_core_error(&err, output, "workspace status")),
+            };
+            match output {
+                OutputFormat::Json | OutputFormat::Ndjson => {
+                    let mut stdout = io::stdout().lock();
+                    serde_json::to_writer(&mut stdout, &outcome)?;
+                    stdout.write_all(b"\n")?;
+                }
+                OutputFormat::Human => {
+                    println!("workspace root: {}", outcome.workspace_root);
+                    for c in &outcome.components {
+                        let marker = if c.dirty { "M" } else { " " };
+                        let v = c.version.as_deref().unwrap_or("-");
+                        println!(
+                            "  [{marker}] {:<8} {:<30} {:<10} {}",
+                            c.kind,
+                            c.id,
+                            v,
+                            &c.current_hash[..16.min(c.current_hash.len())]
+                        );
+                        if c.dirty && !c.cascade.is_empty() {
+                            println!("      cascade: {}", c.cascade.join(", "));
+                        }
+                    }
+                    if outcome.any_dirty {
+                        println!(
+                            "\n{} component(s) modified \u{2014} run `versionx release propose` (0.4) to bump.",
+                            outcome.components.iter().filter(|c| c.dirty).count()
+                        );
+                    } else {
+                        println!("\nclean \u{2014} all components match last-released hashes.");
+                    }
+                }
+            }
+        }
+        WorkspaceCommand::Graph => {
+            let outcome = match ws::graph(&ctx, &ws::GraphOptions { root }) {
+                Ok(o) => o,
+                Err(err) => return Ok(render_core_error(&err, output, "workspace graph")),
+            };
+            match output {
+                OutputFormat::Json | OutputFormat::Ndjson => {
+                    let mut stdout = io::stdout().lock();
+                    serde_json::to_writer(&mut stdout, &outcome)?;
+                    stdout.write_all(b"\n")?;
+                }
+                OutputFormat::Human => {
+                    println!("workspace root: {}", outcome.workspace_root);
+                    println!("nodes ({}):", outcome.nodes.len());
+                    for n in &outcome.nodes {
+                        println!("  - {n}");
+                    }
+                    if outcome.edges.is_empty() {
+                        println!("\nno dependency edges.");
+                    } else {
+                        println!("\nedges ({}):", outcome.edges.len());
+                        for e in &outcome.edges {
+                            println!("  {} -> {}", e.from, e.to);
+                        }
+                    }
+                    println!("\ntopological order (leaves first):");
+                    for (i, id) in outcome.topo_order.iter().enumerate() {
+                        println!("  {i:>2}. {id}");
+                    }
+                }
+            }
+        }
+    }
+    Ok(ExitCode::from(0))
+}
+
+fn run_bump(cwd: Option<&camino::Utf8Path>, output: OutputFormat) -> Result<ExitCode> {
+    use versionx_core::commands::bump;
+
+    let root = resolve_cwd(cwd)?;
+    // The 0.2 proposal operates on an empty last-hashes map (every
+    // component shows as dirty) when no state is stored yet. Once the
+    // lockfile carries `components.<id>.content_hash` (0.4), we'll load
+    // it here and pass it in.
+    let opts =
+        bump::BumpOptions { root, last_hashes: indexmap::IndexMap::new(), groups: Vec::new() };
+    let outcome = match bump::propose(&opts) {
+        Ok(o) => o,
+        Err(err) => return Ok(render_core_error(&err, output, "bump")),
+    };
+
+    match output {
+        OutputFormat::Json | OutputFormat::Ndjson => {
+            let mut stdout = io::stdout().lock();
+            serde_json::to_writer(&mut stdout, &outcome)?;
+            stdout.write_all(b"\n")?;
+        }
+        OutputFormat::Human => {
+            println!("workspace root: {}", outcome.workspace_root);
+            if outcome.clean {
+                println!("no changes detected — nothing to bump.");
+            } else {
+                println!("proposed bumps ({}):", outcome.plan.len());
+                for p in &outcome.plan {
+                    let from = p.from.as_deref().unwrap_or("—");
+                    let reason = match &p.reason {
+                        bump::BumpReason::DirectChange => "direct change".to_string(),
+                        bump::BumpReason::Cascaded { from: srcs } => {
+                            format!("cascaded from {}", srcs.join(", "))
+                        }
+                        bump::BumpReason::GroupLockstep { group, via } => {
+                            format!("lockstep group {group} via {via}")
+                        }
+                    };
+                    println!("  {:<32} {from} -> {:<10} [{:?}] ({reason})", p.id, p.to, p.level);
+                }
+            }
+        }
+    }
+    Ok(ExitCode::from(0))
+}
+
+fn run_tui(cwd: Option<&camino::Utf8Path>) -> Result<ExitCode> {
+    // The TUI ships as a sibling binary (`versionx-tui`). We launch it in
+    // the same working directory so it can discover the workspace.
+    // Locating the sibling: first try PATH (normal install), then fall
+    // back to the sibling next to `versionx` (cargo dev builds).
+    let target = std::env::current_exe().context("locating current exe")?;
+    let sibling = target
+        .parent()
+        .map(|p| p.join(if cfg!(windows) { "versionx-tui.exe" } else { "versionx-tui" }));
+    let mut cmd = match &sibling {
+        Some(p) if p.exists() => std::process::Command::new(p),
+        _ => std::process::Command::new("versionx-tui"),
+    };
+    if let Some(dir) = cwd {
+        cmd.current_dir(dir);
+    }
+    let status = cmd.status().context("spawning versionx-tui")?;
+    Ok(status.code().map_or_else(|| ExitCode::from(1), |c| ExitCode::from(c as u8)))
 }
 
 fn run_activate(shell: Shell, output: OutputFormat) -> Result<ExitCode> {

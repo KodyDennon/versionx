@@ -69,6 +69,12 @@ pub struct VersionxConfig {
     /// Advanced / rarely-touched knobs.
     #[serde(default, skip_serializing_if = "AdvancedConfig::is_empty")]
     pub advanced: AdvancedConfig,
+
+    /// `[[components]]` — hand-declared components that aren't covered by
+    /// native manifests (protocol schemas, shared asset bundles, docs sites,
+    /// etc.). Discovery merges these on top of auto-detected components.
+    #[serde(default, rename = "components", skip_serializing_if = "Vec::is_empty")]
+    pub components: Vec<ComponentConfig>,
 }
 
 /// `[versionx]` block: project metadata.
@@ -244,6 +250,13 @@ pub struct ReleaseConfig {
     /// Per-package overrides (paths and bump rules).
     #[serde(default, skip_serializing_if = "IndexMap::is_empty")]
     pub packages: IndexMap<String, PackageReleaseConfig>,
+
+    /// `[[release.groups]]` — named sets of components that should be
+    /// versioned + tagged together (e.g. an SDK + its CLI that always ship
+    /// at the same version). Groups are consulted by the bump planner when
+    /// deciding what to include in a single plan.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub groups: Vec<ReleaseGroupConfig>,
 }
 
 impl Default for ReleaseConfig {
@@ -258,8 +271,62 @@ impl Default for ReleaseConfig {
             push_mode: default_push_mode(),
             ai: None,
             packages: IndexMap::new(),
+            groups: Vec::new(),
         }
     }
+}
+
+/// `[[components]]` entry.
+///
+/// Hand-declared component for non-manifest artifacts (protocol files,
+/// shared asset bundles, docs sites, etc.). Works alongside auto-discovery
+/// via `versionx-workspace` — declared entries win when names collide.
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ComponentConfig {
+    /// Stable identifier. Referenced by `depends_on` and `[[release.groups]]`.
+    pub name: String,
+    /// Directory rooted at the workspace, e.g. `"protocols/chat"`.
+    pub path: String,
+    /// Optional kind label: `"node" | "python" | "rust" | "go" | "ruby" |
+    /// "jvm" | "oci"` or a custom string (e.g. `"proto"`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub kind: Option<String>,
+    /// Optional current version (`"1.2.3"`). Missing means "not versioned yet".
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub version: Option<String>,
+    /// File globs that define the component's content-hash inputs.
+    /// Defaults to `["**/*"]` when empty.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub inputs: Vec<String>,
+    /// IDs of other components this depends on. These are intra-workspace
+    /// edges, not package-manager dependencies.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub depends_on: Vec<String>,
+}
+
+/// `[[release.groups]]` entry — a lockstep bundle.
+///
+/// When any member of a group gets bumped, every member is bumped to the
+/// same version. Useful for tightly-coupled SDK/CLI pairs.
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ReleaseGroupConfig {
+    /// Human-readable group name — used in plan summaries + tag templates.
+    pub name: String,
+    /// Component IDs that share a version. Must all resolve.
+    pub members: Vec<String>,
+    /// `"lockstep"` (default, all members get the same version) or
+    /// `"independent"` (members share a plan but keep independent versions).
+    #[serde(default = "default_group_mode")]
+    pub mode: String,
+    /// Optional tag template override. `{version}` supported.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tag_template: Option<String>,
+}
+
+fn default_group_mode() -> String {
+    "lockstep".into()
 }
 
 fn default_strategy() -> String {
