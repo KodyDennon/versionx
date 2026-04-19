@@ -5073,6 +5073,7 @@ dependencies = [
  "tracing-subscriber",
  "versionx-core",
  "versionx-daemon",
+ "versionx-mcp",
  "versionx-policy",
  "versionx-release",
  "versionx-sdk",
@@ -5233,14 +5234,29 @@ name = "versionx-mcp"
 version = "0.1.0-dev"
 dependencies = [
  "anyhow",
+ "async-trait",
+ "camino",
+ "chrono",
  "clap",
+ "indexmap",
+ "pretty_assertions",
+ "reqwest",
  "rmcp",
  "serde",
  "serde_json",
+ "tempfile",
+ "thiserror 2.0.18",
  "tokio",
+ "toml",
  "tracing",
  "tracing-subscriber",
+ "uuid",
  "versionx-core",
+ "versionx-lockfile",
+ "versionx-policy",
+ "versionx-release",
+ "versionx-state",
+ "versionx-workspace",
 ]
 
 [[package]]

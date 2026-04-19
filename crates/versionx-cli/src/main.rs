@@ -152,6 +152,14 @@ enum Command {
     /// MCP server for AI-agent integration.
     #[command(subcommand)]
     Mcp(McpCommand),
+
+    /// BYO-API-key LLM configuration + smoke test.
+    #[command(subcommand)]
+    Ai(AiCommand),
+
+    /// Changelog drafting (voice-aware, via BYO-API-key).
+    #[command(subcommand)]
+    Changelog(ChangelogCommand),
 }
 
 #[derive(clap::Args, Debug)]
@@ -338,8 +346,34 @@ enum McpCommand {
     /// Serve the MCP protocol over stdio (the default for agent integrations).
     Serve {
         /// Listen on a loopback HTTP port instead of stdio.
+        /// (Reserved for future; 0.6 ships stdio only.)
         #[arg(long)]
         http: Option<u16>,
+    },
+    /// Print the list of tools, prompts, and resources the server advertises.
+    Describe,
+}
+
+#[derive(Subcommand, Debug)]
+enum AiCommand {
+    /// Print the resolved BYO-API-key provider config.
+    Configure,
+    /// Roundtrip a trivial prompt through the configured provider to verify it.
+    Ping,
+}
+
+#[derive(Subcommand, Debug)]
+enum ChangelogCommand {
+    /// Generate a voice-aware draft changelog section using the configured
+    /// BYO-API-key provider.
+    Draft {
+        /// Next version to draft (e.g. "1.2.4").
+        #[arg(long)]
+        version: String,
+        /// Optional comma-separated commit messages. If omitted we harvest
+        /// from `git log -n 100`.
+        #[arg(long)]
+        commits: Option<String>,
     },
 }
 
@@ -403,7 +437,9 @@ fn dispatch(cli: Cli) -> Result<ExitCode> {
         Command::Plan(sub) => run_plan(sub, cli.cwd.as_deref(), cli.output),
         Command::Policy(sub) => run_policy(sub, cli.cwd.as_deref(), cli.output),
         Command::Waiver(sub) => run_waiver(sub, cli.cwd.as_deref(), cli.output),
-        Command::Mcp(_) => not_yet("mcp", "0.6.0"),
+        Command::Mcp(sub) => block_on(run_mcp(sub, cli.cwd.as_deref(), cli.output)),
+        Command::Ai(sub) => block_on(run_ai(sub, cli.cwd.as_deref(), cli.output)),
+        Command::Changelog(sub) => block_on(run_changelog(sub, cli.cwd.as_deref(), cli.output)),
     }
 }
 
@@ -1642,6 +1678,176 @@ fn emit_waiver_audit(
     Ok(ExitCode::from(0))
 }
 
+async fn run_mcp(
+    sub: McpCommand,
+    cwd: Option<&camino::Utf8Path>,
+    output: OutputFormat,
+) -> Result<ExitCode> {
+    let root = resolve_cwd(cwd)?;
+    match sub {
+        McpCommand::Serve { http } => {
+            if http.is_some() {
+                return bail_with(output, "mcp serve", "HTTP transport not implemented in 0.6");
+            }
+            let ctx = versionx_mcp::McpContext::new(root).context("building mcp context")?;
+            let server = versionx_mcp::VersionxServer::new(ctx);
+            versionx_mcp::serve_stdio(server).await.context("mcp serve_stdio")?;
+            Ok(ExitCode::from(0))
+        }
+        McpCommand::Describe => {
+            let payload = serde_json::json!({
+                "tools": versionx_mcp::tools::descriptors()
+                    .iter()
+                    .map(|d| serde_json::json!({
+                        "name": d.name,
+                        "title": d.title,
+                        "description": d.description,
+                        "mutating": d.mutating,
+                    }))
+                    .collect::<Vec<_>>(),
+                "prompts": versionx_mcp::prompts::descriptors()
+                    .iter()
+                    .map(|p| serde_json::json!({
+                        "name": p.name,
+                        "description": p.description,
+                    }))
+                    .collect::<Vec<_>>(),
+                "resources": versionx_mcp::resources::descriptors()
+                    .iter()
+                    .map(|r| serde_json::json!({
+                        "uri": r.uri,
+                        "name": r.name,
+                        "description": r.description,
+                        "mime_type": r.mime_type,
+                    }))
+                    .collect::<Vec<_>>(),
+            });
+            match output {
+                OutputFormat::Json | OutputFormat::Ndjson => {
+                    let mut stdout = io::stdout().lock();
+                    serde_json::to_writer(&mut stdout, &payload)?;
+                    stdout.write_all(b"\n")?;
+                }
+                OutputFormat::Human => {
+                    println!("tools:");
+                    for d in versionx_mcp::tools::descriptors() {
+                        let flag = if d.mutating { "✎" } else { "·" };
+                        println!("  {flag} {:<22} {}", d.name, d.description);
+                    }
+                    println!("\nprompts:");
+                    for p in versionx_mcp::prompts::descriptors() {
+                        println!("  · {:<26} {}", p.name, p.description);
+                    }
+                    println!("\nresources:");
+                    for r in versionx_mcp::resources::descriptors() {
+                        println!("  · {:<30} {}", r.uri, r.description);
+                    }
+                }
+            }
+            Ok(ExitCode::from(0))
+        }
+    }
+}
+
+async fn run_ai(
+    sub: AiCommand,
+    cwd: Option<&camino::Utf8Path>,
+    output: OutputFormat,
+) -> Result<ExitCode> {
+    let root = resolve_cwd(cwd)?;
+    match sub {
+        AiCommand::Configure => {
+            let cfg = versionx_mcp::ProviderConfig::from_params(&serde_json::Value::Null, &root)
+                .context("reading [release.ai.byo]")?;
+            let payload = serde_json::json!({
+                "provider": cfg.provider_name(),
+                "model": cfg.model,
+                "endpoint": cfg.endpoint(),
+                "api_key_env": cfg.api_key_env,
+                "api_key_set": cfg.api_key().is_some(),
+            });
+            match output {
+                OutputFormat::Json | OutputFormat::Ndjson => {
+                    let mut stdout = io::stdout().lock();
+                    serde_json::to_writer(&mut stdout, &payload)?;
+                    stdout.write_all(b"\n")?;
+                }
+                OutputFormat::Human => {
+                    println!("provider: {}", cfg.provider_name());
+                    println!("model:    {}", cfg.model);
+                    println!("endpoint: {}", cfg.endpoint());
+                    println!(
+                        "api key:  {}",
+                        if cfg.api_key().is_some() { "set" } else { "NOT SET" }
+                    );
+                }
+            }
+            Ok(ExitCode::from(0))
+        }
+        AiCommand::Ping => {
+            let cfg = versionx_mcp::ProviderConfig::from_params(&serde_json::Value::Null, &root)
+                .context("reading [release.ai.byo]")?;
+            let prompt = versionx_mcp::ai::Prompt::new(
+                "You are a smoke test. Respond with a single word: pong.",
+                "ping?",
+            );
+            match versionx_mcp::drive_provider(&cfg, &prompt).await {
+                Ok(reply) => {
+                    emit_msg(
+                        output,
+                        &format!("ok: {}", reply.trim()),
+                        serde_json::json!({"ok": true, "reply": reply}),
+                    )?;
+                    Ok(ExitCode::from(0))
+                }
+                Err(e) => bail_with(output, "ai ping", &e.to_string()),
+            }
+        }
+    }
+}
+
+async fn run_changelog(
+    sub: ChangelogCommand,
+    cwd: Option<&camino::Utf8Path>,
+    output: OutputFormat,
+) -> Result<ExitCode> {
+    let root = resolve_cwd(cwd)?;
+    match sub {
+        ChangelogCommand::Draft { version, commits } => {
+            let cfg = versionx_mcp::ProviderConfig::from_params(&serde_json::Value::Null, &root)
+                .context("reading [release.ai.byo]")?;
+            let commit_messages: Vec<String> = commits.map_or_else(
+                || collect_commit_messages(&root),
+                |s| {
+                    s.split(',')
+                        .map(str::trim)
+                        .filter(|s| !s.is_empty())
+                        .map(str::to_string)
+                        .collect()
+                },
+            );
+            let draft =
+                versionx_mcp::changelog::draft_section(&root, &version, &commit_messages, &cfg)
+                    .await
+                    .context("changelog draft")?;
+            match output {
+                OutputFormat::Json | OutputFormat::Ndjson => {
+                    let mut stdout = io::stdout().lock();
+                    serde_json::to_writer(
+                        &mut stdout,
+                        &serde_json::json!({"version": version, "draft": draft}),
+                    )?;
+                    stdout.write_all(b"\n")?;
+                }
+                OutputFormat::Human => {
+                    println!("{draft}");
+                }
+            }
+            Ok(ExitCode::from(0))
+        }
+    }
+}
+
 fn run_tui(cwd: Option<&camino::Utf8Path>) -> Result<ExitCode> {
     // The TUI ships as a sibling binary (`versionx-tui`). We launch it in
     // the same working directory so it can discover the workspace.
@@ -1852,7 +2058,7 @@ fn status_stub(output: OutputFormat) -> Result<ExitCode> {
 }
 
 // Returns Result for symmetry with sibling dispatch paths that actually fail.
-#[allow(clippy::unnecessary_wraps)]
+#[allow(clippy::unnecessary_wraps, dead_code)]
 fn not_yet(cmd: &str, target: &str) -> Result<ExitCode> {
     eprintln!(
         "versionx: `{cmd}` is not yet implemented. Target release: {target}.\n\

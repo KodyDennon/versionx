@@ -72,6 +72,7 @@ versionx-github          = { path = "crates/versionx-github",          version =
 versionx-events          = { path = "crates/versionx-events",          version = "0.1.0-dev" }
 versionx-sdk             = { path = "crates/versionx-sdk",             version = "0.1.0-dev" }
 versionx-daemon          = { path = "crates/versionx-daemon",          version = "0.1.0-dev" }
+versionx-mcp             = { path = "crates/versionx-mcp",             version = "0.1.0-dev" }
 
 # Async runtime
 tokio = { version = "1.41", features = ["full"] }
