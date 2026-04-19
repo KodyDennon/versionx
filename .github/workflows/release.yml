@@ -66,12 +66,26 @@ jobs:
       # but also really annoying to build CI around when it needs secrets to work right.)
       - id: plan
         run: |
-          dist ${{ (!github.event.pull_request && 'host --steps=create --tag=timestamp --force-tag') || 'plan' }} --output-format=json > plan-dist-manifest.json
+          # Three modes:
+          #   - PR:        `dist plan`  (no release artifacts produced)
+          #   - tag push:  `dist host --steps=create --tag=<tag>` (real release)
+          #   - main push: `dist host --steps=create --tag=timestamp --force-tag` (alpha snapshot)
+          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+            dist plan --output-format=json > plan-dist-manifest.json
+          elif [[ "${{ github.ref }}" == refs/tags/* ]]; then
+            dist host --steps=create --tag="${GITHUB_REF#refs/tags/}" --output-format=json > plan-dist-manifest.json
+          else
+            dist host --steps=create --tag=timestamp --force-tag --output-format=json > plan-dist-manifest.json
+          fi
           echo "dist ran successfully"
           cat plan-dist-manifest.json
           echo "manifest=$(jq -c "." plan-dist-manifest.json)" >> "$GITHUB_OUTPUT"
           echo "tag=$(jq --raw-output ".announcement_tag" plan-dist-manifest.json)" >> "$GITHUB_OUTPUT"
-          echo "tag-flag=--tag=$(jq --raw-output ".announcement_tag" plan-dist-manifest.json) --force-tag" >> "$GITHUB_OUTPUT"
+          if [[ "${{ github.ref }}" == refs/tags/* ]]; then
+            echo "tag-flag=--tag=$(jq --raw-output ".announcement_tag" plan-dist-manifest.json)" >> "$GITHUB_OUTPUT"
+          else
+            echo "tag-flag=--tag=$(jq --raw-output ".announcement_tag" plan-dist-manifest.json) --force-tag" >> "$GITHUB_OUTPUT"
+          fi
       - name: "Upload dist-manifest.json"
         uses: actions/upload-artifact@v6
         with:
