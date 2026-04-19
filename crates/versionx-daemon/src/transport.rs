@@ -131,6 +131,7 @@ mod platform {
         }
     }
 
+    #[derive(Debug)]
     pub struct Listener {
         pipe_name: String,
         server: parking_lot::Mutex<Option<NamedPipeServer>>,
