@@ -197,18 +197,48 @@ impl RuntimeInstaller for YarnInstaller {
         spec: &VersionSpec,
         ctx: &InstallerContext,
     ) -> InstallerResult<ResolvedVersion> {
-        let version =
-            resolve_github_release_version(&ctx.http, "yarnpkg", "yarn", spec.as_str()).await?;
-        let url = format!(
-            "https://github.com/yarnpkg/yarn/releases/download/v{version}/yarn-v{version}.tar.gz"
-        );
-        Ok(ResolvedVersion {
-            version,
-            channel: None,
-            source: "github:yarnpkg/yarn".into(),
-            sha256: None,
-            url: Some(url),
-        })
+        // Disambiguate: explicit "1.x" / "2+" go through the
+        // appropriate repo, but `latest` defaults to Berry (modern
+        // Yarn) since Classic is in maintenance.
+        let raw = spec.as_str();
+        let probe_flavor = if raw == "latest" || raw == "stable" || raw == "current" {
+            YarnFlavor::Berry
+        } else {
+            Self::release_flavor(raw)
+        };
+
+        match probe_flavor {
+            YarnFlavor::Classic => {
+                let version =
+                    resolve_github_release_version(&ctx.http, "yarnpkg", "yarn", raw).await?;
+                let url = format!(
+                    "https://github.com/yarnpkg/yarn/releases/download/v{version}/yarn-v{version}.tar.gz"
+                );
+                Ok(ResolvedVersion {
+                    version,
+                    channel: Some("classic".into()),
+                    source: "github:yarnpkg/yarn".into(),
+                    sha256: None,
+                    url: Some(url),
+                })
+            }
+            YarnFlavor::Berry => {
+                // Berry releases live in yarnpkg/berry under the
+                // `@yarnpkg/cli/<version>` tag prefix; each release
+                // ships a single `yarn-<version>.cjs` binary.
+                let version = resolve_yarn_berry_version(&ctx.http, raw).await?;
+                let url = format!(
+                    "https://github.com/yarnpkg/berry/releases/download/@yarnpkg%2Fcli%2F{version}/yarn-{version}.cjs"
+                );
+                Ok(ResolvedVersion {
+                    version,
+                    channel: Some("berry".into()),
+                    source: "github:yarnpkg/berry".into(),
+                    sha256: None,
+                    url: Some(url),
+                })
+            }
+        }
     }
 
     async fn install(
@@ -236,12 +266,41 @@ impl RuntimeInstaller for YarnInstaller {
             let _ = std::fs::remove_dir_all(&install_path);
         }
         match Self::release_flavor(&version.version) {
-            YarnFlavor::Classic | YarnFlavor::Berry => {
-                // Both flavours ship as tar.gz with a single top-level dir.
+            YarnFlavor::Classic => {
+                // Classic ships as tar.gz with a single top-level dir.
                 if artifact_name.ends_with(".zip") {
                     extract_zip(&archive_path, &install_path, 1)?;
                 } else {
                     extract_tar(&archive_path, &install_path, 1)?;
+                }
+            }
+            YarnFlavor::Berry => {
+                // Berry ships as a single `yarn-<v>.cjs` file; copy
+                // it into <install_path>/yarn.cjs and write a small
+                // `bin/yarn` wrapper that execs `node` against it.
+                std::fs::create_dir_all(install_path.join("bin").as_std_path()).map_err(
+                    |source| InstallerError::Io { path: install_path.join("bin"), source },
+                )?;
+                let dest = install_path.join("yarn.cjs");
+                std::fs::copy(archive_path.as_std_path(), dest.as_std_path())
+                    .map_err(|source| InstallerError::Io { path: dest.clone(), source })?;
+                let wrapper_path = install_path.join("bin/yarn");
+                let wrapper_body = "#!/usr/bin/env bash\nDIR=\"$(cd \"$(dirname \"$0\")\" && pwd)\"\nexec node \"$DIR/../yarn.cjs\" \"$@\"\n";
+                std::fs::write(wrapper_path.as_std_path(), wrapper_body)
+                    .map_err(|source| InstallerError::Io { path: wrapper_path.clone(), source })?;
+                #[cfg(unix)]
+                {
+                    use std::os::unix::fs::PermissionsExt;
+                    let _ = std::fs::set_permissions(
+                        wrapper_path.as_std_path(),
+                        std::fs::Permissions::from_mode(0o755),
+                    );
+                }
+                if cfg!(target_os = "windows") {
+                    let cmd_path = install_path.join("bin/yarn.cmd");
+                    let cmd_body = "@echo off\r\nnode \"%~dp0..\\yarn.cjs\" %*\r\n";
+                    std::fs::write(cmd_path.as_std_path(), cmd_body)
+                        .map_err(|source| InstallerError::Io { path: cmd_path.clone(), source })?;
                 }
             }
         }
@@ -261,13 +320,18 @@ impl RuntimeInstaller for YarnInstaller {
     }
 
     fn shim_entries(&self, installation: &Installation) -> Vec<ShimEntry> {
-        vec![
-            ShimEntry { name: "yarn".into(), target: installation.install_path.join("bin/yarn") },
-            ShimEntry {
-                name: "yarnpkg".into(),
-                target: installation.install_path.join("bin/yarnpkg"),
-            },
-        ]
+        // Berry only exposes `yarn`. Classic ships both `yarn` and
+        // `yarnpkg`, but we shim `yarnpkg` only when it actually
+        // exists on disk.
+        let mut out = vec![ShimEntry {
+            name: "yarn".into(),
+            target: installation.install_path.join("bin/yarn"),
+        }];
+        let yarnpkg = installation.install_path.join("bin/yarnpkg");
+        if yarnpkg.is_file() {
+            out.push(ShimEntry { name: "yarnpkg".into(), target: yarnpkg });
+        }
+        out
     }
 
     async fn verify(&self, installation: &Installation) -> InstallerResult<()> {
@@ -364,6 +428,52 @@ async fn resolve_github_release_version(
 fn looks_exact(v: &str) -> bool {
     // Must match major.minor.patch with optional pre-release.
     semver::Version::parse(v).is_ok()
+}
+
+/// Resolve a Yarn Berry version spec by scanning yarnpkg/berry
+/// releases for tags of the form `@yarnpkg/cli/<version>`.
+///
+/// Accepts:
+///   - exact `4.6.0` / `v4.6.0`
+///   - prefix `4` or `4.6`
+///   - alias `latest` / `stable`
+async fn resolve_yarn_berry_version(http: &reqwest::Client, spec: &str) -> InstallerResult<String> {
+    let bare = spec.trim().trim_start_matches('v');
+    if looks_exact(bare) {
+        return Ok(bare.to_string());
+    }
+
+    // The Berry repo hosts releases for many sub-packages; we
+    // filter by tag prefix `@yarnpkg/cli/` and pick the highest.
+    #[derive(Deserialize)]
+    struct Release {
+        tag_name: String,
+        #[serde(default)]
+        prerelease: bool,
+    }
+    // Pull a wide window — Berry tags many minor packages alongside
+    // each cli release.
+    let url = "https://api.github.com/repos/yarnpkg/berry/releases?per_page=100";
+    let (bytes, _) = download_to_memory(http, url).await?;
+    let releases: Vec<Release> = serde_json::from_slice(&bytes)
+        .map_err(|e| InstallerError::Other(format!("parsing yarn berry releases: {e}")))?;
+
+    let prefix = "@yarnpkg/cli/";
+    let mut best: Option<semver::Version> = None;
+    for r in releases.iter().filter(|r| !r.prerelease) {
+        let Some(rest) = r.tag_name.strip_prefix(prefix) else { continue };
+        let Ok(parsed) = semver::Version::parse(rest) else { continue };
+        if bare == "latest" || bare == "stable" || bare == "current" || rest.starts_with(bare) {
+            match &best {
+                Some(cur) if cur >= &parsed => {}
+                _ => best = Some(parsed),
+            }
+        }
+    }
+    best.map(|v| v.to_string()).ok_or_else(|| InstallerError::UnresolvableVersion {
+        tool: "yarn-berry",
+        spec: spec.to_string(),
+    })
 }
 
 #[cfg(test)]

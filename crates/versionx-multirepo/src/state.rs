@@ -40,6 +40,8 @@ pub enum StateError {
     Git(#[from] versionx_git::WriteError),
     #[error("no backup found in history")]
     NoBackup,
+    #[error("state DB error: {0}")]
+    State(#[from] versionx_state::StateError),
 }
 
 pub type StateResult<T> = Result<T, StateError>;
@@ -70,6 +72,78 @@ pub fn restore(repo: &Utf8Path) -> StateResult<BackupManifest> {
 /// caller to inspect / replay.
 pub fn repair(repo: &Utf8Path, max: usize) -> StateResult<Vec<HistoryEvent>> {
     Ok(versionx_git::history::list(repo, max)?)
+}
+
+/// Outcome of a `repair` that also rebuilt the on-disk state DB.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct RepairReport {
+    /// Path of the rebuilt sqlite file.
+    pub state_db_path: String,
+    /// Number of `release.apply` events replayed into `runs`.
+    pub release_runs: usize,
+    /// Number of `state.backup` events seen.
+    pub backups: usize,
+    /// Total events scanned.
+    pub events_scanned: usize,
+}
+
+/// Rebuild the on-disk `state.db` from the history ref. Idempotent —
+/// calling twice produces the same DB content modulo timestamps.
+///
+/// Strategy:
+///   1. Open / create the state DB at `db_path`.
+///   2. Upsert a row in `repos` for `workspace_root` so foreign keys
+///      attach.
+///   3. Walk `refs/versionx/history` newest-first; for each known
+///      event kind insert a corresponding row.
+///
+/// Skips unknown event kinds — repair must not fail on a future
+/// schema's events written by a newer Versionx.
+pub fn repair_state_db(
+    repo: &Utf8Path,
+    workspace_root: &Utf8Path,
+    db_path: &Utf8Path,
+    max_events: usize,
+) -> StateResult<RepairReport> {
+    use chrono::DateTime;
+    use versionx_state::RunOutcome;
+
+    let events = versionx_git::history::list(repo, max_events)?;
+    let state = versionx_state::open(db_path).map_err(StateError::State)?;
+    let repo_row = state.upsert_repo(workspace_root, None).map_err(StateError::State)?;
+
+    let mut release_runs = 0_usize;
+    let mut backups = 0_usize;
+    for event in &events {
+        match event.kind.as_str() {
+            "release.apply" => {
+                let plan_id = event.details.get("plan_id").and_then(|v| v.as_str());
+                let started_at: DateTime<chrono::Utc> = event.at;
+                state
+                    .replay_run(
+                        Some(repo_row.id),
+                        "release apply",
+                        started_at,
+                        RunOutcome::Success,
+                        plan_id,
+                        None,
+                    )
+                    .map_err(StateError::State)?;
+                release_runs += 1;
+            }
+            "state.backup" => {
+                backups += 1;
+            }
+            _ => {}
+        }
+    }
+
+    Ok(RepairReport {
+        state_db_path: db_path.to_string(),
+        release_runs,
+        backups,
+        events_scanned: events.len(),
+    })
 }
 
 /// Convenience helper: record a release apply into the history ref.
@@ -127,5 +201,21 @@ mod tests {
         let events = repair(&root, 10).unwrap();
         assert_eq!(events.len(), 2);
         assert!(events[0].summary.contains("second"));
+    }
+
+    #[test]
+    fn repair_state_db_replays_release_runs() {
+        let (_g, root) = init_repo();
+        record_release_apply(&root, "blake3:first", "f".repeat(40).as_str(), vec![]).unwrap();
+        record_release_apply(&root, "blake3:second", "s".repeat(40).as_str(), vec![]).unwrap();
+        let db_path = root.join(".versionx/state.db");
+        let report = repair_state_db(&root, &root, &db_path, 100).unwrap();
+        assert_eq!(report.release_runs, 2);
+        assert_eq!(report.events_scanned, 2);
+
+        let state = versionx_state::open(&db_path).unwrap();
+        let runs = state.recent_runs(10).unwrap();
+        assert_eq!(runs.len(), 2);
+        assert_eq!(runs[0].command, "release apply");
     }
 }

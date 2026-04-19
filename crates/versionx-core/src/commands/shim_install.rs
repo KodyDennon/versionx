@@ -1,7 +1,10 @@
-//! Install symlink-based shims (Unix) into the user's shim dir.
+//! Install shims into the user's shim dir.
 //!
-//! On Windows we'd copy a `versionx-shim.exe` per tool instead; that path is
-//! stubbed out for 0.1.0 per the roadmap.
+//! Unix uses symlinks (cheap, atomic, refresh by re-link). Windows
+//! copies `versionx-shim.exe` per tool — Volta-style — because file
+//! symlinks on Windows require Developer Mode or Admin and break
+//! when the target lives on another drive. The shim binary inspects
+//! `argv[0]` to figure out which tool it should resolve.
 
 use std::fs;
 
@@ -82,10 +85,55 @@ fn create_or_refresh_symlink(target: &Utf8Path, link: &Utf8Path) -> CoreResult<(
 }
 
 #[cfg(windows)]
-fn create_or_refresh_symlink(_target: &Utf8Path, _link: &Utf8Path) -> CoreResult<()> {
-    // Windows shims are deferred per the v0.1.0 roadmap — see docs/spec/11-version-roadmap.md.
-    // The Volta-style .exe-copy pattern will land in a later phase.
+fn create_or_refresh_symlink(target: &Utf8Path, link: &Utf8Path) -> CoreResult<()> {
+    // Windows: copy versionx-shim.exe under the target tool name +
+    // `.exe`. The shim binary detects the requested tool from
+    // `std::env::current_exe().file_stem()` so a copy works as a
+    // drop-in proxy.
+    //
+    // Re-copy unconditionally — `std::fs::copy` is atomic-ish on
+    // NTFS (uses CopyFileW which writes via temp + rename on most
+    // configurations) and the shim binary is small (<200 KB).
+    let link_with_ext = if link.extension().map(|e| e.eq_ignore_ascii_case("exe")).unwrap_or(false)
+    {
+        link.to_path_buf()
+    } else {
+        Utf8PathBuf::from(format!("{link}.exe"))
+    };
+
+    if link_with_ext.symlink_metadata().is_ok() {
+        let _ = fs::remove_file(&link_with_ext);
+    }
+    fs::copy(target.as_std_path(), link_with_ext.as_std_path())
+        .map_err(|source| CoreError::Io { path: link_with_ext.to_string(), source })?;
     Ok(())
+}
+
+#[cfg(all(test, windows))]
+mod windows_tests {
+    use super::*;
+
+    #[test]
+    fn install_shims_copies_exe_per_entry() {
+        let tmp = tempfile::tempdir().unwrap();
+        let base = Utf8PathBuf::from_path_buf(tmp.path().to_path_buf()).unwrap();
+        let shim_bin = base.join("versionx-shim.exe");
+        std::fs::write(&shim_bin, b"MZ\x00\x00stub-pe").unwrap();
+        let shims_dir = base.join("shims");
+
+        let entries = vec![
+            ShimEntry { name: "node".into(), target: base.join("node-real") },
+            ShimEntry { name: "npm".into(), target: base.join("npm-real") },
+        ];
+
+        install_shims(&shims_dir, &entries, Some(&shim_bin)).unwrap();
+        for name in &["node", "npm"] {
+            let copied = shims_dir.join(format!("{name}.exe"));
+            assert!(copied.is_file(), "expected {copied} to be a file");
+            let bytes = std::fs::read(copied.as_std_path()).unwrap();
+            assert_eq!(bytes, b"MZ\x00\x00stub-pe");
+        }
+    }
 }
 
 #[cfg(all(test, unix))]

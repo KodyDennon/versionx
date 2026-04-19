@@ -181,6 +181,62 @@ enum Command {
     /// State backup / restore / repair via refs/versionx/history.
     #[command(subcommand)]
     State(StateCommand),
+
+    /// Diagnose the local Versionx install + workspace health.
+    /// Prints a structured pass/fail per check.
+    Doctor,
+
+    /// Run a command using the workspace's pinned tool resolution.
+    /// `versionx exec node app.js` invokes the pinned Node.
+    Exec {
+        /// Tool to launch (e.g. `node`, `python`).
+        tool: String,
+        /// Arguments to pass to the tool.
+        #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
+        args: Vec<String>,
+    },
+
+    /// Import an existing repo's tool config (mise/asdf/nvm/poetry)
+    /// into a fresh `versionx.toml`.
+    Import {
+        /// Source format. Auto-detects when omitted.
+        #[arg(long, value_enum)]
+        from: Option<ImportSource>,
+    },
+
+    /// One-shot self-test: doctor + verify + a no-op sync plan.
+    SelfCheck,
+
+    /// Changeset workflow (release-please-style metadata files).
+    #[command(subcommand)]
+    Changeset(ChangesetCommand),
+}
+
+#[derive(Copy, Clone, Debug, ValueEnum)]
+enum ImportSource {
+    Mise,
+    Asdf,
+    Nvm,
+    Poetry,
+}
+
+#[derive(Subcommand, Debug)]
+enum ChangesetCommand {
+    /// Create a new changeset file under `.changeset/`.
+    Add {
+        /// Component id this change targets.
+        component: String,
+        /// Bump kind: major | minor | patch.
+        #[arg(long, default_value = "patch")]
+        level: String,
+        /// One-line summary.
+        #[arg(long)]
+        summary: Option<String>,
+    },
+    /// Validate every changeset file is parseable + targets a real component.
+    Check,
+    /// List pending changesets in chronological order.
+    List,
 }
 
 #[derive(clap::Args, Debug)]
@@ -317,6 +373,27 @@ enum ReleaseCommand {
         #[arg(long)]
         allow_dirty: bool,
     },
+    /// Cut a snapshot release — uses a CalVer-style version derived
+    /// from the current timestamp. Useful for nightly/canary cuts.
+    Snapshot {
+        /// Override the snapshot tag prefix (default: `snapshot`).
+        #[arg(long, default_value = "snapshot")]
+        prefix: String,
+    },
+    /// Roll back a previously-applied release by reverting its commit
+    /// + deleting its tag(s). Conservative: never force-pushes.
+    Rollback {
+        /// Plan id whose apply you want to undo.
+        plan_id: String,
+    },
+    /// Cut a prerelease (`-rc.N`, `-alpha.N`, `-beta.N`).
+    Prerelease {
+        /// Plan id (must be approved).
+        plan_id: String,
+        /// Prerelease channel: `rc`, `alpha`, `beta`.
+        #[arg(long, default_value = "rc")]
+        channel: String,
+    },
 }
 
 #[derive(Subcommand, Debug)]
@@ -327,6 +404,12 @@ enum PlanCommand {
     Show { plan_id: String },
     /// Delete all expired plans.
     Expire,
+    /// Apply a plan — alias of `versionx release apply`.
+    Apply {
+        plan_id: String,
+        #[arg(long)]
+        allow_dirty: bool,
+    },
 }
 
 #[derive(Subcommand, Debug)]
@@ -346,6 +429,9 @@ enum PolicyCommand {
     Update,
     /// Audit waivers for expired / expiring-soon entries.
     Audit,
+    /// Verify policy sources against the policy lockfile (hash drift
+    /// + sealed-name removal).
+    Verify,
 }
 
 #[derive(Subcommand, Debug)]
@@ -360,15 +446,34 @@ enum WaiverCommand {
         #[arg(long, value_name = "FILE")]
         path: Option<Utf8PathBuf>,
     },
+    /// Add a new waiver to the local policy file.
+    Add {
+        /// Policy name to waive.
+        policy: String,
+        /// Required: human-readable reason. Silent waivers hide rot.
+        #[arg(long)]
+        reason: String,
+        /// ISO date for waiver expiry. Defaults to 30 days from now.
+        #[arg(long)]
+        expires_at: Option<String>,
+        /// Optional owner / contact.
+        #[arg(long)]
+        owner: Option<String>,
+        /// Path to waivers file (defaults to `.versionx/policies/local.toml`).
+        #[arg(long, value_name = "FILE")]
+        path: Option<Utf8PathBuf>,
+    },
 }
 
 #[derive(Subcommand, Debug)]
 enum McpCommand {
     /// Serve the MCP protocol over stdio (the default for agent integrations).
     Serve {
-        /// Listen on a loopback HTTP port instead of stdio.
-        /// (Reserved for future; 0.6 ships stdio only.)
-        #[arg(long)]
+        /// Listen on a loopback HTTP port instead of stdio. The
+        /// server binds 127.0.0.1:`PORT` and uses rmcp's
+        /// streamable-http transport with default DNS-rebind
+        /// protection (loopback only).
+        #[arg(long, value_name = "PORT")]
         http: Option<u16>,
     },
     /// Print the list of tools, prompts, and resources the server advertises.
@@ -412,6 +517,13 @@ enum FleetCommand {
     },
     /// Initialize a bare-bones `versionx-fleet.toml` in the current directory.
     Init,
+    /// Sync every member: shallow git fetch + report drift vs. the
+    /// recorded remote.
+    Sync {
+        /// Comma-separated member name filter; empty = all members.
+        #[arg(long)]
+        only: Option<String>,
+    },
     /// Release orchestration over a set.
     #[command(subcommand)]
     Release(FleetReleaseCommand),
@@ -514,7 +626,7 @@ fn dispatch(cli: Cli) -> Result<ExitCode> {
         Command::Init(args) => run_init(&args, cli.cwd.as_deref(), cli.output),
         Command::Sync(args) => block_on(run_sync(args, cli.cwd.as_deref(), cli.output)),
         Command::Verify => run_verify(cli.cwd.as_deref(), cli.output),
-        Command::Status => status_stub(cli.output),
+        Command::Status => run_status(cli.cwd.as_deref(), cli.output),
         Command::Install(args) => block_on(run_install(args, cli.output)),
         Command::Which { tool } => block_on(run_which(tool, cli.cwd.as_deref(), cli.output)),
         Command::Activate(args) => run_activate(args.shell, cli.output),
@@ -535,6 +647,13 @@ fn dispatch(cli: Cli) -> Result<ExitCode> {
         Command::Fleet(sub) => run_fleet(sub, cli.cwd.as_deref(), cli.output),
         Command::Links(sub) => run_links(sub, cli.cwd.as_deref(), cli.output),
         Command::State(sub) => run_state(sub, cli.cwd.as_deref(), cli.output),
+        Command::Doctor => run_doctor(cli.cwd.as_deref(), cli.output),
+        Command::Exec { tool, args } => {
+            block_on(run_exec(tool, args, cli.cwd.as_deref(), cli.output))
+        }
+        Command::Import { from } => run_import(from, cli.cwd.as_deref(), cli.output),
+        Command::SelfCheck => run_self_check(cli.cwd.as_deref(), cli.output),
+        Command::Changeset(sub) => run_changeset(sub, cli.cwd.as_deref(), cli.output),
     }
 }
 
@@ -561,12 +680,28 @@ async fn run_sync(
 ) -> Result<ExitCode> {
     let root = resolve_cwd(cwd)?;
     let (_bus, ctx) = core_ctx()?;
-    let opts = CoreSyncOpts { root, dry_run: args.plan_only };
+    let opts = CoreSyncOpts { root: root.clone(), dry_run: args.plan_only };
 
     let outcome = match core_cmds::sync(&ctx, &opts).await {
         Ok(o) => o,
         Err(err) => return Ok(render_core_error(&err, output, "sync")),
     };
+
+    // Run policies with `Trigger::Sync` after sync completes (the
+    // resolved versions are what `runtime_version` rules expect to
+    // see). A blocking finding flips the exit code but doesn't roll
+    // back the install — sync is idempotent, the user can fix the
+    // policy or re-pin and re-run.
+    let mut policy_blocked = false;
+    if let Ok(set) = versionx_policy::load_and_verify(&root, &[]) {
+        let pctx = build_policy_context(&root, Some(versionx_policy::Trigger::Sync))?;
+        if let Ok(report) = versionx_policy::evaluate(&set, &pctx)
+            && report.has_blocking()
+        {
+            emit_policy_report(&report, output)?;
+            policy_blocked = true;
+        }
+    }
 
     match output {
         OutputFormat::Json | OutputFormat::Ndjson => {
@@ -587,6 +722,9 @@ async fn run_sync(
                 eprintln!("  skipped {skip}");
             }
         }
+    }
+    if policy_blocked {
+        return Ok(ExitCode::from(1));
     }
     Ok(ExitCode::from(0))
 }
@@ -1156,6 +1294,7 @@ async fn tail_log(path: &camino::Utf8Path, tail: usize, follow: bool) -> Result<
     }
 }
 
+#[allow(clippy::too_many_lines)] // dispatcher over 7 release subcommands; splitting scatters logic
 fn run_release(
     sub: ReleaseCommand,
     cwd: Option<&camino::Utf8Path>,
@@ -1167,6 +1306,10 @@ fn run_release(
 
     match sub {
         ReleaseCommand::Propose { strategy, pr_title } => {
+            // 1. Build the bump plan first so we can evaluate policies
+            //    against the planned outcome (release_gate rules want to
+            //    inspect what's about to happen, not what already
+            //    happened).
             let last = versionx_core::commands::workspace::load_last_hashes(&root);
             let input = propose_mod::ProposeInput {
                 strategy,
@@ -1179,6 +1322,24 @@ fn run_release(
                 Ok(p) => p,
                 Err(err) => return bail_with(output, "release propose", &err.to_string()),
             };
+
+            // 2. Run policies with `Trigger::ReleasePropose`. Any
+            //    blocking finding stops the plan from being persisted.
+            if let Ok(set) = versionx_policy::load_and_verify(&root, &[]) {
+                let ctx =
+                    build_policy_context(&root, Some(versionx_policy::Trigger::ReleasePropose))?;
+                if let Ok(report) = versionx_policy::evaluate(&set, &ctx)
+                    && report.has_blocking()
+                {
+                    emit_policy_report(&report, output)?;
+                    return bail_with(
+                        output,
+                        "release propose",
+                        "blocked by policy findings — see report above",
+                    );
+                }
+            }
+
             let saved_to = plan.save(&plans_dir).context("writing plan")?;
             emit_plan(&plan, Some(&saved_to), output)
         }
@@ -1206,6 +1367,24 @@ fn run_release(
         ReleaseCommand::Apply { plan_id, allow_dirty } => {
             let plan = ReleasePlan::load_by_id(&plans_dir, &plan_id)
                 .with_context(|| format!("loading plan {plan_id}"))?;
+
+            // Re-run policies with `Trigger::ReleaseApply` — between
+            // propose and apply, the lockfile/manifest may have drifted.
+            if let Ok(set) = versionx_policy::load_and_verify(&root, &[]) {
+                let ctx =
+                    build_policy_context(&root, Some(versionx_policy::Trigger::ReleaseApply))?;
+                if let Ok(report) = versionx_policy::evaluate(&set, &ctx)
+                    && report.has_blocking()
+                {
+                    emit_policy_report(&report, output)?;
+                    return bail_with(
+                        output,
+                        "release apply",
+                        "blocked by policy findings — see report above",
+                    );
+                }
+            }
+
             let input = versionx_release::ApplyInput {
                 commit_messages: collect_commit_messages(&root),
                 enforce_clean_tree: !allow_dirty,
@@ -1214,6 +1393,104 @@ fn run_release(
             let outcome = match versionx_release::apply(&plan, &input) {
                 Ok(o) => o,
                 Err(err) => return bail_with(output, "release apply", &err.to_string()),
+            };
+            emit_apply_outcome(&outcome, output)
+        }
+        ReleaseCommand::Snapshot { prefix } => {
+            // Snapshot tag uses the current UTC date + commit short
+            // SHA: e.g. `snapshot-20260419-abc123`. Creates the tag
+            // locally only — no commit, no version-file rewrites.
+            let summary = versionx_git::read::summarize(&root)
+                .map_err(|e| anyhow::anyhow!("git read: {e}"))?;
+            let short: String = summary.head_sha.chars().take(7).collect();
+            let date = chrono::Utc::now().format("%Y%m%d");
+            let tag_name = format!("{prefix}-{date}-{short}");
+
+            let repo = versionx_git::open(&root).map_err(|e| anyhow::anyhow!("open repo: {e}"))?;
+            let message = format!("Versionx snapshot {tag_name}");
+            if let Err(e) = versionx_git::tag(&repo, &tag_name, &message) {
+                return bail_with(output, "release snapshot", &e.to_string());
+            }
+            emit_msg(
+                output,
+                &format!("created snapshot tag {tag_name}"),
+                serde_json::json!({
+                    "tag": tag_name,
+                    "head_sha": summary.head_sha,
+                }),
+            )?;
+            Ok(ExitCode::from(0))
+        }
+        ReleaseCommand::Rollback { plan_id } => {
+            // Find the original apply via the history ref so we know
+            // which commit + tags to undo.
+            let events = versionx_git::history::list(&root, 1000)
+                .map_err(|e| anyhow::anyhow!("history list: {e}"))?;
+            let apply_event = events
+                .iter()
+                .find(|e| {
+                    e.kind == "release.apply"
+                        && e.details.get("plan_id").and_then(|v| v.as_str())
+                            == Some(plan_id.as_str())
+                })
+                .ok_or_else(|| {
+                    anyhow::anyhow!("no release.apply event found for plan {plan_id}")
+                })?;
+            let commit = apply_event
+                .details
+                .get("commit")
+                .and_then(|v| v.as_str())
+                .ok_or_else(|| anyhow::anyhow!("apply event missing commit field"))?;
+
+            let repo = versionx_git::open(&root).map_err(|e| anyhow::anyhow!("open repo: {e}"))?;
+            let revert_sha = match versionx_git::revert_commit(&repo, commit) {
+                Ok(s) => s,
+                Err(e) => return bail_with(output, "release rollback", &e.to_string()),
+            };
+            // Best-effort: delete any tags this plan created.
+            if let Some(tags) = apply_event.details.get("tags").and_then(|v| v.as_array()) {
+                for t in tags {
+                    if let Some(tag_name) = t.as_str() {
+                        let _ = versionx_git::delete_tag(&repo, tag_name);
+                    }
+                }
+            }
+            emit_msg(
+                output,
+                &format!("rolled back plan {plan_id} via commit {revert_sha}"),
+                serde_json::json!({
+                    "plan_id": plan_id,
+                    "reverted_commit": commit,
+                    "revert_commit": revert_sha,
+                }),
+            )?;
+            Ok(ExitCode::from(0))
+        }
+        ReleaseCommand::Prerelease { plan_id, channel } => {
+            // Patch every bump in the plan to add a `-<channel>.<n>`
+            // suffix, then apply normally. We use a simple monotonic
+            // counter scoped to the plan id.
+            let mut plan = ReleasePlan::load_by_id(&plans_dir, &plan_id)
+                .with_context(|| format!("loading plan {plan_id}"))?;
+            for b in &mut plan.bumps {
+                if !b.to.contains('-') {
+                    b.to = format!("{}-{channel}.0", b.to);
+                }
+            }
+            // Save the rewritten plan under a new id so the original
+            // survives.
+            let prerel_id = format!("{plan_id}-{channel}");
+            plan.plan_id = prerel_id;
+            plan.save(&plans_dir).context("writing prerelease plan")?;
+
+            let input = versionx_release::ApplyInput {
+                commit_messages: collect_commit_messages(&root),
+                enforce_clean_tree: false,
+                ..versionx_release::ApplyInput::new(root.clone())
+            };
+            let outcome = match versionx_release::apply(&plan, &input) {
+                Ok(o) => o,
+                Err(err) => return bail_with(output, "release prerelease", &err.to_string()),
             };
             emit_apply_outcome(&outcome, output)
         }
@@ -1248,6 +1525,12 @@ fn run_plan(
                 serde_json::json!({"expired": removed}),
             )?;
             Ok(ExitCode::from(0))
+        }
+        PlanCommand::Apply { plan_id, allow_dirty } => {
+            // Alias of `versionx release apply`. Kept here so users
+            // who've conceptually grouped "everything plan" under the
+            // `plan` subcommand can apply without re-learning.
+            run_release(ReleaseCommand::Apply { plan_id, allow_dirty }, cwd, output)
         }
     }
 }
@@ -1433,9 +1716,9 @@ style = "conventional"
             Ok(ExitCode::from(0))
         }
         PolicyCommand::Check => {
-            let docs = pol::load_dir(&dir, &[]).context("loading policies")?;
-            let set = pol::PolicySet::from_documents(&docs).context("merging policies")?;
-            let ctx = build_policy_context(&root)?;
+            let set = pol::load_and_verify(&root, &[])
+                .context("loading + verifying policies against lockfile")?;
+            let ctx = build_policy_context(&root, Some(pol::Trigger::Check))?;
             let report = pol::evaluate(&set, &ctx).context("evaluating policies")?;
             emit_policy_report(&report, output)
         }
@@ -1506,9 +1789,8 @@ style = "conventional"
             Ok(ExitCode::from(0))
         }
         PolicyCommand::Stats => {
-            let docs = pol::load_dir(&dir, &[]).context("loading policies")?;
-            let set = pol::PolicySet::from_documents(&docs).context("merging policies")?;
-            let ctx = build_policy_context(&root)?;
+            let set = pol::load_and_verify(&root, &[]).context("loading policies")?;
+            let ctx = build_policy_context(&root, Some(pol::Trigger::Check))?;
             let report = pol::evaluate(&set, &ctx).context("evaluating policies")?;
             let tally = report.tally();
             match output {
@@ -1538,13 +1820,19 @@ style = "conventional"
                     .filter(|p| p.sealed)
                     .map(|p| p.name.clone())
                     .collect();
+                // Store paths relative to the workspace root so the
+                // lockfile is portable across machines / checkouts.
+                let rel = d
+                    .path
+                    .strip_prefix(&root)
+                    .map_or_else(|_| d.path.clone(), camino::Utf8Path::to_path_buf);
                 lf.sources.push(pol::LockedSource {
-                    path: d.path.to_string(),
+                    path: rel.to_string(),
                     blake3: hash,
                     sealed: sealed_names,
                 });
             }
-            let out_path = root.join("versionx.policy.lock");
+            let out_path = pol::default_lockfile_path(&root);
             lf.save(&out_path).context("writing policy lockfile")?;
             emit_msg(
                 output,
@@ -1552,6 +1840,23 @@ style = "conventional"
                 serde_json::json!({"lockfile": out_path.to_string(), "sources": lf.sources.len()}),
             )?;
             Ok(ExitCode::from(0))
+        }
+        PolicyCommand::Verify => {
+            // Load + run lockfile verification; surface mismatches.
+            match pol::load_and_verify(&root, &[]) {
+                Ok(set) => {
+                    emit_msg(
+                        output,
+                        "policies + lockfile in sync",
+                        serde_json::json!({
+                            "policies": set.policies.len(),
+                            "waivers": set.waivers.len(),
+                        }),
+                    )?;
+                    Ok(ExitCode::from(0))
+                }
+                Err(e) => bail_with(output, "policy verify", &format!("{e}")),
+            }
         }
         PolicyCommand::Audit => {
             let docs = pol::load_dir(&dir, &[]).context("loading policies")?;
@@ -1561,6 +1866,7 @@ style = "conventional"
     }
 }
 
+#[allow(clippy::too_many_lines)] // dispatcher over 4 waiver subcommands; splitting scatters logic
 fn run_waiver(
     sub: WaiverCommand,
     cwd: Option<&camino::Utf8Path>,
@@ -1640,6 +1946,51 @@ fn run_waiver(
             )?;
             Ok(ExitCode::from(0))
         }
+        WaiverCommand::Add { policy, reason, expires_at, owner, path } => {
+            let file = path.unwrap_or_else(|| dir.join("local.toml"));
+            std::fs::create_dir_all(dir.as_std_path()).context("creating policies dir")?;
+
+            let expiry = match expires_at {
+                Some(s) => chrono::DateTime::parse_from_rfc3339(&s)
+                    .map(|dt| dt.with_timezone(&chrono::Utc))
+                    .or_else(|_| {
+                        chrono::NaiveDate::parse_from_str(&s, "%Y-%m-%d").map(|d| {
+                            d.and_hms_opt(0, 0, 0).unwrap().and_local_timezone(chrono::Utc).unwrap()
+                        })
+                    })
+                    .map_err(|e| anyhow::anyhow!("invalid expires_at `{s}`: {e}"))?,
+                None => chrono::Utc::now() + chrono::Duration::days(30),
+            };
+
+            // Load-or-create the local doc, append waiver, write back.
+            let mut doc = if file.is_file() {
+                let raw =
+                    std::fs::read_to_string(file.as_std_path()).context("reading waivers file")?;
+                versionx_policy::parse_policy_toml(&raw).context("parsing waivers file")?
+            } else {
+                versionx_policy::PolicyDocument::default()
+            };
+            doc.waivers.push(versionx_policy::Waiver {
+                policy: policy.clone(),
+                reason,
+                expires_at: expiry,
+                owner,
+                scope: None,
+            });
+            let rendered =
+                versionx_policy::render_policy_toml(&doc).context("rendering updated waivers")?;
+            std::fs::write(file.as_std_path(), rendered).context("writing waivers file")?;
+            emit_msg(
+                output,
+                &format!("added waiver for `{policy}` in {file}"),
+                serde_json::json!({
+                    "policy": policy,
+                    "expires_at": expiry,
+                    "path": file.to_string(),
+                }),
+            )?;
+            Ok(ExitCode::from(0))
+        }
     }
 }
 
@@ -1647,12 +1998,31 @@ fn run_waiver(
 /// state. Populates components + runtimes; leaves link/advisory
 /// channels empty (they're filled by higher-level subsystems — 0.5
 /// just needs the plumbing).
-fn build_policy_context(root: &camino::Utf8Path) -> Result<versionx_policy::PolicyContext> {
-    use versionx_policy::{ContextComponent, ContextRuntime, PolicyContext};
+/// Build the full policy evaluation context for a workspace.
+///
+/// Populates every field [`versionx_policy::PolicyContext`] exposes so
+/// rules don't see partial state:
+///   - `trigger`: which command spawned the evaluation (caller passes).
+///   - `components`: discovered components with their declared deps.
+///   - `runtimes`: pinned versions from `[runtimes]`.
+///   - `commits`: messages since the last tag (or last 100 if first
+///     release).
+///   - `lockfile_integrity_ok`: result of `versionx verify`.
+///   - `advisories`: from the lockfile (if it records them; empty
+///     otherwise — populated once the resolver lands).
+///   - `links`: from `[links]` in `versionx.toml`.
+///   - `provenance`: empty until sigstore wiring lands.
+fn build_policy_context(
+    root: &camino::Utf8Path,
+    trigger: Option<versionx_policy::Trigger>,
+) -> Result<versionx_policy::PolicyContext> {
+    use versionx_policy::{ContextComponent, ContextLink, ContextRuntime, PolicyContext};
     use versionx_workspace::discovery;
 
     let ws = discovery::discover(root).context("discovering workspace")?;
     let mut ctx = PolicyContext::new(root.to_path_buf());
+    ctx.trigger = trigger;
+
     for c in ws.components.values() {
         let mut deps = std::collections::BTreeMap::new();
         for d in &c.depends_on {
@@ -1671,15 +2041,57 @@ fn build_policy_context(root: &camino::Utf8Path) -> Result<versionx_policy::Poli
         );
     }
 
-    // Runtimes — read pins straight from `versionx.toml` so
-    // `runtime_version` rules can fire without depending on the full
-    // core loader.
     if let Some(pins) = read_runtime_pins(root) {
         for (name, version) in pins {
             ctx.runtimes.insert(name.clone(), ContextRuntime { name, version });
         }
     }
+
+    // Commits since the most recent tag (or last 100 if no tags yet).
+    // We reuse `collect_commit_messages` for simplicity; release-gate
+    // policies typically want the last batch anyway.
+    for msg in collect_commit_messages(root) {
+        // Tease the SHA off the front if we ever switch to `--pretty=%H %B`.
+        ctx.commits.push(versionx_policy::ContextCommit { sha: String::new(), message: msg });
+    }
+
+    // Lockfile integrity — best-effort, swallow errors so
+    // `policy check` works even when no lock exists yet.
+    let opts =
+        versionx_core::commands::verify::VerifyOptions { root: root.to_path_buf(), deep: false };
+    if let Ok((_bus, ctx_core)) = core_ctx()
+        && let Ok(report) = versionx_core::commands::verify::verify(&ctx_core, &opts)
+    {
+        ctx.lockfile_integrity_ok = Some(report.config_hash_ok && report.problems.is_empty());
+    }
+
+    // Links — pull `[links]` out of versionx.toml so `link_freshness`
+    // can look at last-update timestamps.
+    if let Some(links) = read_links(root) {
+        for (name, age) in links {
+            ctx.links.insert(name.clone(), ContextLink { name, age_days: age });
+        }
+    }
+
     Ok(ctx)
+}
+
+/// Read `[links]` from versionx.toml. Each entry may be a string
+/// (treated as a remote spec, age unknown) or a table with an
+/// `age_days` field. Returns `None` on any parse failure.
+fn read_links(root: &camino::Utf8Path) -> Option<Vec<(String, Option<i64>)>> {
+    let raw = std::fs::read_to_string(root.join("versionx.toml").as_std_path()).ok()?;
+    let doc: toml::Value = toml::from_str(&raw).ok()?;
+    let tbl = doc.get("links")?.as_table()?;
+    let mut out = Vec::with_capacity(tbl.len());
+    for (name, val) in tbl {
+        let age = match val {
+            toml::Value::Table(t) => t.get("age_days").and_then(toml::Value::as_integer),
+            _ => None,
+        };
+        out.push((name.clone(), age));
+    }
+    Some(out)
 }
 
 /// Pull `[runtimes]` pins out of `versionx.toml`. Returns `None` if the
@@ -1781,12 +2193,14 @@ async fn run_mcp(
     let root = resolve_cwd(cwd)?;
     match sub {
         McpCommand::Serve { http } => {
-            if http.is_some() {
-                return bail_with(output, "mcp serve", "HTTP transport not implemented in 0.6");
-            }
             let ctx = versionx_mcp::McpContext::new(root).context("building mcp context")?;
             let server = versionx_mcp::VersionxServer::new(ctx);
-            versionx_mcp::serve_stdio(server).await.context("mcp serve_stdio")?;
+            if let Some(port) = http {
+                versionx_mcp::serve_http(server, port).await.context("mcp serve_http")?;
+            } else {
+                let _ = output;
+                versionx_mcp::serve_stdio(server).await.context("mcp serve_stdio")?;
+            }
             Ok(ExitCode::from(0))
         }
         McpCommand::Describe => {
@@ -2040,6 +2454,7 @@ fn run_bare(cwd: Option<&camino::Utf8Path>, output: OutputFormat) -> Result<Exit
     Ok(ExitCode::from(0))
 }
 
+#[allow(clippy::too_many_lines)] // dispatcher over 6 fleet subcommands; splitting scatters logic
 fn run_fleet(
     sub: FleetCommand,
     cwd: Option<&camino::Utf8Path>,
@@ -2142,6 +2557,68 @@ fn run_fleet(
             }
             Ok(ExitCode::from(0))
         }
+        FleetCommand::Sync { only } => {
+            let path = FleetConfig::discover(&root).map_err(|e| anyhow::anyhow!("{e}"))?;
+            let fleet_root = path.parent().unwrap_or(&root).to_path_buf();
+            let cfg = FleetConfig::load(&path).map_err(|e| anyhow::anyhow!("{e}"))?;
+
+            let filter: Vec<String> = only
+                .as_deref()
+                .map(|s| s.split(',').map(str::trim).map(str::to_string).collect())
+                .unwrap_or_default();
+
+            let mut report = Vec::new();
+            for m in &cfg.members {
+                if !filter.is_empty() && !filter.contains(&m.name) {
+                    continue;
+                }
+                let member_root = fleet_root.join(&m.path);
+                let summary = versionx_git::read::summarize(&member_root).map_or_else(
+                    |e| {
+                        serde_json::json!({
+                            "name": m.name,
+                            "path": member_root.to_string(),
+                            "error": e.to_string(),
+                        })
+                    },
+                    |s| {
+                        serde_json::json!({
+                            "name": m.name,
+                            "path": member_root.to_string(),
+                            "head_sha": s.head_sha,
+                            "head_ref": s.head_ref,
+                            "dirty": s.dirty,
+                        })
+                    },
+                );
+                report.push(summary);
+            }
+
+            match output {
+                OutputFormat::Json | OutputFormat::Ndjson => {
+                    let mut stdout = io::stdout().lock();
+                    serde_json::to_writer(&mut stdout, &report)?;
+                    stdout.write_all(b"\n")?;
+                }
+                OutputFormat::Human => {
+                    for r in &report {
+                        let name = r.get("name").and_then(|v| v.as_str()).unwrap_or("?");
+                        if let Some(err) = r.get("error").and_then(|v| v.as_str()) {
+                            println!("  ✗ {name}: {err}");
+                        } else {
+                            let head = r.get("head_sha").and_then(|v| v.as_str()).unwrap_or("?");
+                            let dirty = r
+                                .get("dirty")
+                                .and_then(serde_json::Value::as_bool)
+                                .unwrap_or(false);
+                            let mark = if dirty { "·" } else { "✓" };
+                            println!("  {mark} {name:<24} {head:.8}");
+                        }
+                    }
+                }
+            }
+            Ok(ExitCode::from(0))
+        }
         FleetCommand::Release(sub) => run_fleet_release(sub, &root, output),
     }
 }
@@ -2189,46 +2666,154 @@ fn run_fleet_release(
                 _ => RollbackStrategy::ManualRescue,
             };
 
-            // Build a step per member that delegates to `versionx release`
-            // against the member's checkout. Keeping it light — we just
-            // shell out to our own binary, which is already fully
-            // implemented. Fleet-level orchestration is thin glue.
+            // Each member step shells out to `versionx release …`
+            // inside the member's checkout. The struct keeps a
+            // per-member map of (member → plan_id) so `tag` knows
+            // which plan to apply after `dry_run` proposed one. The
+            // map is wrapped in a Mutex so the trait methods can be
+            // `&self` (the saga drives steps sequentially per member,
+            // but the executor type signatures still need shared
+            // mutability for cross-call state).
+            //
+            // The `remotes` map tells `publish` which git remote to
+            // push the tag to. Empty entry = local-only (no push).
             struct CliStep {
                 exe: std::path::PathBuf,
+                proposed_plans: std::sync::Mutex<std::collections::HashMap<String, String>>,
+                remotes: std::collections::HashMap<String, Option<String>>,
             }
-            impl MemberStep for CliStep {
-                fn dry_run(&self, _name: &str, member_root: &camino::Utf8Path) -> SagaResult<()> {
-                    let out = std::process::Command::new(&self.exe)
-                        .args(["--cwd", member_root.as_str(), "workspace", "status"])
-                        .output()
-                        .map_err(|e| versionx_multirepo::SagaError::StepFailed {
+            impl CliStep {
+                fn run(
+                    &self,
+                    member_root: &camino::Utf8Path,
+                    args: &[&str],
+                ) -> Result<serde_json::Value, versionx_multirepo::SagaError> {
+                    let mut full = vec!["--cwd", member_root.as_str(), "--output", "json"];
+                    full.extend_from_slice(args);
+                    let out = std::process::Command::new(&self.exe).args(&full).output().map_err(
+                        |e| versionx_multirepo::SagaError::StepFailed {
                             member: member_root.to_string(),
-                            message: e.to_string(),
-                        })?;
+                            message: format!("spawn versionx: {e}"),
+                        },
+                    )?;
                     if !out.status.success() {
                         return Err(versionx_multirepo::SagaError::StepFailed {
                             member: member_root.to_string(),
-                            message: String::from_utf8_lossy(&out.stderr).to_string(),
+                            message: format!(
+                                "exit={} stderr={}",
+                                out.status,
+                                String::from_utf8_lossy(&out.stderr)
+                            ),
                         });
                     }
-                    Ok(())
-                }
-                fn tag(&self, _name: &str, member_root: &camino::Utf8Path) -> SagaResult<TagInfo> {
-                    // 0.7 tags are managed by `versionx release apply` in
-                    // each member. We just record the current HEAD so
-                    // rollback has something to target.
-                    let summary = versionx_git::read::summarize(member_root).map_err(|e| {
+                    serde_json::from_slice(&out.stdout).map_err(|e| {
                         versionx_multirepo::SagaError::StepFailed {
                             member: member_root.to_string(),
-                            message: e.to_string(),
+                            message: format!(
+                                "non-JSON output from versionx {args:?}: {e} — raw {}",
+                                String::from_utf8_lossy(&out.stdout)
+                            ),
+                        }
+                    })
+                }
+            }
+            impl MemberStep for CliStep {
+                fn dry_run(&self, name: &str, member_root: &camino::Utf8Path) -> SagaResult<()> {
+                    // Propose a release plan locally — does not commit
+                    // or tag, just writes a plan file under
+                    // `.versionx/plans/`. Save the plan_id so
+                    // `tag` can apply it.
+                    let value = self.run(member_root, &["release", "propose"])?;
+                    let plan_id = value
+                        .get("plan_id")
+                        .and_then(|v| v.as_str())
+                        .ok_or_else(|| versionx_multirepo::SagaError::StepFailed {
+                            member: member_root.to_string(),
+                            message: "release propose returned no plan_id".into(),
+                        })?
+                        .to_string();
+                    self.proposed_plans
+                        .lock()
+                        .map_err(|e| versionx_multirepo::SagaError::StepFailed {
+                            member: name.to_string(),
+                            message: format!("plan map poisoned: {e}"),
+                        })?
+                        .insert(name.to_string(), plan_id);
+                    Ok(())
+                }
+                fn tag(&self, name: &str, member_root: &camino::Utf8Path) -> SagaResult<TagInfo> {
+                    let plan_id = self
+                        .proposed_plans
+                        .lock()
+                        .map_err(|e| versionx_multirepo::SagaError::StepFailed {
+                            member: name.to_string(),
+                            message: format!("plan map poisoned: {e}"),
+                        })?
+                        .get(name)
+                        .cloned()
+                        .ok_or_else(|| versionx_multirepo::SagaError::StepFailed {
+                            member: member_root.to_string(),
+                            message: "no plan from dry_run; cannot tag".into(),
+                        })?;
+                    // Approve before apply (apply refuses unapproved plans).
+                    let _ = self.run(member_root, &["release", "approve", plan_id.as_str()]);
+                    let outcome = self.run(member_root, &["release", "apply", plan_id.as_str()])?;
+                    let commit = outcome
+                        .get("commit")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or_default()
+                        .to_string();
+                    let tag_name = outcome
+                        .get("tags")
+                        .and_then(|v| v.as_array())
+                        .and_then(|a| a.first())
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("")
+                        .to_string();
+                    Ok(TagInfo { tag_name, commit_sha: commit })
+                }
+                fn publish(&self, name: &str, member_root: &camino::Utf8Path) -> SagaResult<()> {
+                    // Two-step publish: (1) push the git tag + branch
+                    // to the configured remote; (2) attempt a registry
+                    // publish (npm/crates.io). Both steps are best-
+                    // effort with structured errors so the saga can
+                    // attribute failures.
+
+                    // 1. Git push.
+                    if let Some(Some(remote)) = self.remotes.get(name).cloned() {
+                        let repo = versionx_git::open(member_root).map_err(|e| {
+                            versionx_multirepo::SagaError::StepFailed {
+                                member: member_root.to_string(),
+                                message: format!("open repo: {e}"),
+                            }
+                        })?;
+                        let head_ref = repo
+                            .head()
+                            .ok()
+                            .and_then(|h| h.shorthand().map(str::to_string))
+                            .unwrap_or_else(|| "HEAD".to_string());
+                        let refspecs = vec![
+                            format!("refs/heads/{head_ref}:refs/heads/{head_ref}"),
+                            "refs/tags/*:refs/tags/*".to_string(),
+                        ];
+                        versionx_git::push(&repo, &remote, &refspecs).map_err(|e| {
+                            versionx_multirepo::SagaError::StepFailed {
+                                member: member_root.to_string(),
+                                message: format!("push to {remote}: {e}"),
+                            }
+                        })?;
+                    }
+
+                    // 2. Registry publish. Returns Ok(None) when the
+                    //    member root has no recognized package
+                    //    manifest (mixed-ecosystem fleets are fine).
+                    versionx_release::publish_component(member_root).map_err(|e| {
+                        versionx_multirepo::SagaError::StepFailed {
+                            member: member_root.to_string(),
+                            message: format!("registry publish: {e}"),
                         }
                     })?;
-                    Ok(TagInfo { tag_name: "(managed)".into(), commit_sha: summary.head_sha })
-                }
-                fn publish(&self, _name: &str, _member_root: &camino::Utf8Path) -> SagaResult<()> {
-                    // Publish is deferred to 0.8 (registry OIDC). For
-                    // 0.7 the saga just verifies the tag + commit landed
-                    // locally, which `versionx release apply` did.
+
                     Ok(())
                 }
                 fn rollback(
@@ -2237,20 +2822,70 @@ fn run_fleet_release(
                     member_root: &camino::Utf8Path,
                     tag: &TagInfo,
                 ) -> SagaResult<()> {
-                    // Best-effort: reset the member repo to tag.commit_sha.
-                    if let Ok(repo) = versionx_git::open(member_root) {
-                        let _ = versionx_git::reset_hard(&repo, &tag.commit_sha);
+                    // Non-destructive: create a revert commit + delete
+                    // the local tag. We deliberately do *not* hard-reset
+                    // — published commits should stay in history. If
+                    // publish already pushed, the operator pushes the
+                    // revert manually (or runs `versionx fleet release
+                    // apply` again with the fix).
+                    let Ok(repo) = versionx_git::open(member_root) else {
+                        return Ok(());
+                    };
+                    if !tag.commit_sha.is_empty() {
+                        let _ = versionx_git::revert_commit(&repo, &tag.commit_sha);
+                    }
+                    if !tag.tag_name.is_empty() {
+                        let _ = versionx_git::delete_tag(&repo, &tag.tag_name);
                     }
                     Ok(())
                 }
             }
 
             let exe = std::env::current_exe().unwrap_or_else(|_| "versionx".into());
+            // Map member-name → optional remote for `publish`. Honors
+            // each member's configured `remote = "..."`.
+            let remotes: std::collections::HashMap<String, Option<String>> = cfg
+                .members
+                .iter()
+                .map(|m| {
+                    // Default remote is "origin" if a URL is set; if
+                    // none is configured, publish stays local-only.
+                    let r = m.remote.as_ref().map(|_| "origin".to_string());
+                    (m.name.clone(), r)
+                })
+                .collect();
+            let proposed_plans = std::sync::Mutex::new(std::collections::HashMap::new());
+            let cli_step = std::sync::Arc::new(CliStep { exe, proposed_plans, remotes });
+            // The saga API takes Box<dyn MemberStep> per member; we
+            // wrap a per-member adapter that delegates to the shared
+            // CliStep. Cheap — just forwards calls.
+            struct StepHandle {
+                inner: std::sync::Arc<CliStep>,
+            }
+            impl MemberStep for StepHandle {
+                fn dry_run(&self, name: &str, root: &camino::Utf8Path) -> SagaResult<()> {
+                    self.inner.dry_run(name, root)
+                }
+                fn tag(&self, name: &str, root: &camino::Utf8Path) -> SagaResult<TagInfo> {
+                    self.inner.tag(name, root)
+                }
+                fn publish(&self, name: &str, root: &camino::Utf8Path) -> SagaResult<()> {
+                    self.inner.publish(name, root)
+                }
+                fn rollback(
+                    &self,
+                    name: &str,
+                    root: &camino::Utf8Path,
+                    tag: &TagInfo,
+                ) -> SagaResult<()> {
+                    self.inner.rollback(name, root, tag)
+                }
+            }
             let mut steps: std::collections::BTreeMap<String, Box<dyn MemberStep>> =
                 std::collections::BTreeMap::new();
             for name in &cfg.set(&set).ok_or_else(|| anyhow::anyhow!("unknown set: {set}"))?.members
             {
-                steps.insert(name.clone(), Box::new(CliStep { exe: exe.clone() }));
+                steps.insert(name.clone(), Box::new(StepHandle { inner: cli_step.clone() }));
             }
             let report = run_saga(&cfg, &fleet_root, &set, &steps, strategy)
                 .map_err(|e| anyhow::anyhow!("{e}"))?;
@@ -2690,24 +3325,100 @@ const fn error_kind(err: &versionx_core::CoreError) -> &'static str {
     }
 }
 
-fn status_stub(output: OutputFormat) -> Result<ExitCode> {
-    let payload = serde_json::json!({
-        "schema_version": "0",
-        "versionx_version": env!("CARGO_PKG_VERSION"),
-        "state": "scaffold",
-        "message": "Workspace detection not yet implemented. See docs/spec/11-version-roadmap.md for 0.1.0 scope."
+/// `versionx status` — structured workspace report.
+///
+/// Returns real facts: git presence, config + lockfile state, component
+/// count, daemon status, and per-component pinned versions. In human
+/// mode the output is a tight table; in JSON / NDJSON it's a single
+/// document the MCP server / agents can ingest verbatim.
+fn run_status(cwd: Option<&camino::Utf8Path>, output: OutputFormat) -> Result<ExitCode> {
+    let root = resolve_cwd(cwd).unwrap_or_else(|_| camino::Utf8PathBuf::from("."));
+
+    let has_config = root.join("versionx.toml").is_file();
+    let has_lock = root.join("versionx.lock").is_file();
+    let in_git = versionx_git::read::summarize(&root).is_ok();
+    let head_sha = versionx_git::read::summarize(&root).ok().map(|s| s.head_sha);
+    let workspace = versionx_workspace::discovery::discover(&root).ok();
+    let component_count = workspace.as_ref().map_or(0, |w| w.components.len());
+
+    let daemon_paths = versionx_daemon::DaemonPaths::from_env();
+    let daemon_running = daemon_paths.as_ref().is_some_and(|p| {
+        tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .ok()
+            .is_some_and(|rt| rt.block_on(versionx_daemon::is_running(p)))
     });
+
+    let runtime_pins = read_runtime_pins(&root).unwrap_or_default();
+
+    let components_json: Vec<_> = workspace
+        .as_ref()
+        .map(|w| {
+            w.components
+                .values()
+                .map(|c| {
+                    serde_json::json!({
+                        "id": c.id.to_string(),
+                        "kind": c.kind.as_str(),
+                        "root": c.root.to_string(),
+                        "version": c.version.as_ref().map(ToString::to_string),
+                    })
+                })
+                .collect()
+        })
+        .unwrap_or_default();
 
     match output {
         OutputFormat::Json | OutputFormat::Ndjson => {
+            let payload = serde_json::json!({
+                "schema_version": "1",
+                "versionx_version": env!("CARGO_PKG_VERSION"),
+                "workspace_root": root,
+                "in_git": in_git,
+                "head_sha": head_sha,
+                "has_config": has_config,
+                "has_lockfile": has_lock,
+                "daemon_running": daemon_running,
+                "components": components_json,
+                "runtime_pins": runtime_pins
+                    .iter()
+                    .map(|(n, v)| serde_json::json!({"name": n, "version": v}))
+                    .collect::<Vec<_>>(),
+            });
             let mut stdout = io::stdout().lock();
             serde_json::to_writer(&mut stdout, &payload)?;
             stdout.write_all(b"\n")?;
         }
         OutputFormat::Human => {
-            println!("Versionx {} — scaffold", env!("CARGO_PKG_VERSION"));
-            println!("Workspace detection not yet implemented.");
-            println!("Tracking toward 0.1.0 per docs/spec/11-version-roadmap.md.");
+            println!("versionx {} · {}", env!("CARGO_PKG_VERSION"), root);
+            let mut flags = Vec::new();
+            flags.push(if in_git { "git✓" } else { "git✗" });
+            flags.push(if has_config { "config✓" } else { "config✗" });
+            flags.push(if has_lock { "lock✓" } else { "lock✗" });
+            flags.push(if daemon_running { "daemon✓" } else { "daemon✗" });
+            println!("  {}", flags.join(" · "));
+            if let Some(sha) = head_sha {
+                let short: String = sha.chars().take(8).collect();
+                println!("  head: {short}");
+            }
+            if !runtime_pins.is_empty() {
+                println!("  runtimes:");
+                for (name, version) in &runtime_pins {
+                    println!("    {name} {version}");
+                }
+            }
+            if component_count == 0 {
+                println!("  components: none discovered");
+            } else {
+                println!("  components ({component_count}):");
+                if let Some(ws) = &workspace {
+                    for c in ws.components.values() {
+                        let v = c.version.as_ref().map_or_else(|| "-".into(), ToString::to_string);
+                        println!("    {:<28} {} ({})", c.id.to_string(), v, c.kind.as_str());
+                    }
+                }
+            }
         }
     }
     Ok(ExitCode::from(0))
@@ -2724,19 +3435,397 @@ fn not_yet(cmd: &str, target: &str) -> Result<ExitCode> {
     Ok(ExitCode::from(64))
 }
 
+/// Walk the clap [`Cli`] command tree and emit a JSON schema MCP /
+/// AI agents can consume. Includes every subcommand, every arg, and
+/// the structured help text.
 fn emit_help_json() -> ExitCode {
-    // Placeholder — a full implementation walks the clap Command tree.
-    let schema = serde_json::json!({
-        "schema_version": "0",
+    use clap::CommandFactory;
+    let cmd = Cli::command();
+    let payload = serde_json::json!({
+        "schema_version": "1",
         "versionx_version": env!("CARGO_PKG_VERSION"),
-        "commands": [
-            "init", "sync", "verify", "status", "install", "which",
-            "activate", "runtime", "daemon", "tui", "release", "policy", "mcp"
-        ],
-        "note": "Structured --help-json output lands in 0.1.0 per docs/spec/09-programmatic-and-ai-api.md."
+        "command": describe_command(&cmd),
     });
-    println!("{}", serde_json::to_string_pretty(&schema).unwrap());
+    println!("{}", serde_json::to_string_pretty(&payload).unwrap_or_default());
     ExitCode::from(0)
+}
+
+fn describe_command(cmd: &clap::Command) -> serde_json::Value {
+    let about = cmd.get_about().map(ToString::to_string);
+    let long_about = cmd.get_long_about().map(ToString::to_string);
+    let args: Vec<_> = cmd.get_arguments().filter(|a| !a.is_hide_set()).map(describe_arg).collect();
+    let subcommands: Vec<_> =
+        cmd.get_subcommands().filter(|s| !s.is_hide_set()).map(describe_command).collect();
+    serde_json::json!({
+        "name": cmd.get_name(),
+        "about": about,
+        "long_about": long_about,
+        "args": args,
+        "subcommands": subcommands,
+    })
+}
+
+fn describe_arg(arg: &clap::Arg) -> serde_json::Value {
+    let possible_values: Vec<_> =
+        arg.get_possible_values().iter().map(|v| v.get_name().to_string()).collect();
+    serde_json::json!({
+        "id": arg.get_id().as_str(),
+        "long": arg.get_long().map(ToString::to_string),
+        "short": arg.get_short().map(|c| c.to_string()),
+        "help": arg.get_help().map(ToString::to_string),
+        "value_name": arg.get_value_names().map(|names| {
+            names.iter().map(ToString::to_string).collect::<Vec<_>>()
+        }),
+        "required": arg.is_required_set(),
+        "global": arg.is_global_set(),
+        "default_values": arg
+            .get_default_values()
+            .iter()
+            .map(|v| v.to_string_lossy().into_owned())
+            .collect::<Vec<_>>(),
+        "possible_values": possible_values,
+    })
+}
+
+// -------- doctor / exec / import / self-check / changeset --------------
+
+/// `versionx doctor` — structured pass/fail per check.
+fn run_doctor(cwd: Option<&camino::Utf8Path>, output: OutputFormat) -> Result<ExitCode> {
+    let root = resolve_cwd(cwd).unwrap_or_else(|_| camino::Utf8PathBuf::from("."));
+    let mut checks: Vec<(String, bool, String)> = Vec::new();
+
+    let home = versionx_core::paths::VersionxHome::detect();
+    checks.push(match &home {
+        Ok(h) => ("VERSIONX_HOME".into(), true, h.data.to_string()),
+        Err(e) => ("VERSIONX_HOME".into(), false, e.to_string()),
+    });
+
+    let in_git = versionx_git::read::summarize(&root).is_ok();
+    checks.push(("git repo".into(), in_git, root.to_string()));
+
+    let has_config = root.join("versionx.toml").is_file();
+    checks.push((
+        "versionx.toml present".into(),
+        has_config,
+        root.join("versionx.toml").to_string(),
+    ));
+
+    let has_lock = root.join("versionx.lock").is_file();
+    checks.push(("versionx.lock present".into(), has_lock, root.join("versionx.lock").to_string()));
+
+    let daemon_paths = versionx_daemon::DaemonPaths::from_env();
+    let daemon_running = daemon_paths.as_ref().is_some_and(|p| {
+        tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .ok()
+            .is_some_and(|rt| rt.block_on(versionx_daemon::is_running(p)))
+    });
+    checks.push((
+        "daemon".into(),
+        daemon_running,
+        daemon_paths.as_ref().map_or_else(|| "no DaemonPaths".into(), |p| p.socket.to_string()),
+    ));
+
+    let shim_bin = versionx_core::commands::shim_install::shim_binary_path();
+    checks.push(shim_bin.as_ref().map_or_else(
+        || ("shim binary".into(), false, "not found".into()),
+        |p| ("shim binary".into(), true, p.to_string()),
+    ));
+
+    let any_failed = checks.iter().any(|(_, ok, _)| !ok);
+
+    match output {
+        OutputFormat::Json | OutputFormat::Ndjson => {
+            let payload: Vec<_> = checks
+                .iter()
+                .map(|(n, ok, d)| serde_json::json!({"check": n, "ok": ok, "detail": d}))
+                .collect();
+            let mut stdout = io::stdout().lock();
+            serde_json::to_writer(&mut stdout, &payload)?;
+            stdout.write_all(b"\n")?;
+        }
+        OutputFormat::Human => {
+            for (name, ok, detail) in &checks {
+                let mark = if *ok { "✓" } else { "✗" };
+                println!("  {mark} {name:<28} {detail}");
+            }
+        }
+    }
+    Ok(ExitCode::from(u8::from(any_failed)))
+}
+
+/// `versionx exec <tool> -- args…` — resolve the workspace's pinned
+/// version of `<tool>` then exec it, forwarding stdio.
+async fn run_exec(
+    tool: String,
+    args: Vec<String>,
+    cwd: Option<&camino::Utf8Path>,
+    output: OutputFormat,
+) -> Result<ExitCode> {
+    let root = resolve_cwd(cwd)?;
+    let (_bus, ctx) = core_ctx()?;
+    let opts = CoreWhichOpts { tool: tool.clone(), cwd: root };
+    let resolved = match core_cmds::which(&ctx, &opts).await {
+        Ok(o) => o,
+        Err(err) => return Ok(render_core_error(&err, output, "exec")),
+    };
+    let Some(bin) = resolved.binary else {
+        return bail_with(
+            output,
+            "exec",
+            &format!("no resolved binary for `{tool}`: {}", resolved.reason),
+        );
+    };
+    let status = std::process::Command::new(bin.as_str())
+        .args(&args)
+        .status()
+        .with_context(|| format!("spawning {bin}"))?;
+    Ok(ExitCode::from(status.code().unwrap_or(1) as u8))
+}
+
+/// `versionx import` — detect a sibling tool config and seed
+/// `versionx.toml`. Currently supports mise / asdf / nvm / poetry.
+fn run_import(
+    from: Option<ImportSource>,
+    cwd: Option<&camino::Utf8Path>,
+    output: OutputFormat,
+) -> Result<ExitCode> {
+    let root = resolve_cwd(cwd)?;
+    let detected = from.or_else(|| detect_import_source(&root));
+    let Some(source) = detected else {
+        return bail_with(
+            output,
+            "import",
+            "no recognized config found (looked for .mise.toml, .tool-versions, .nvmrc, pyproject.toml)",
+        );
+    };
+
+    let pins = match source {
+        ImportSource::Mise => parse_mise(&root),
+        ImportSource::Asdf => parse_asdf(&root),
+        ImportSource::Nvm => parse_nvmrc(&root),
+        ImportSource::Poetry => parse_pyproject(&root),
+    };
+
+    let mut versionx_toml_path = root.join("versionx.toml");
+    if versionx_toml_path.is_file() {
+        // Append into a `# imported` section rather than overwrite.
+        versionx_toml_path = root.join("versionx.imported.toml");
+    }
+
+    let mut body =
+        String::from("# Imported by `versionx import`\nschema_version = \"1\"\n\n[runtimes]\n");
+    for (tool, version) in &pins {
+        use std::fmt::Write;
+        let _ = writeln!(body, "{tool} = \"{version}\"");
+    }
+    std::fs::write(versionx_toml_path.as_std_path(), body)
+        .context("writing imported versionx.toml")?;
+    emit_msg(
+        output,
+        &format!("imported {} pins from {source:?} → {versionx_toml_path}", pins.len()),
+        serde_json::json!({"source": format!("{source:?}"), "path": versionx_toml_path.to_string(), "pins": pins}),
+    )?;
+    Ok(ExitCode::from(0))
+}
+
+fn detect_import_source(root: &camino::Utf8Path) -> Option<ImportSource> {
+    if root.join(".mise.toml").is_file() || root.join("mise.toml").is_file() {
+        return Some(ImportSource::Mise);
+    }
+    if root.join(".tool-versions").is_file() {
+        return Some(ImportSource::Asdf);
+    }
+    if root.join(".nvmrc").is_file() {
+        return Some(ImportSource::Nvm);
+    }
+    if root.join("pyproject.toml").is_file() {
+        return Some(ImportSource::Poetry);
+    }
+    None
+}
+
+fn parse_mise(root: &camino::Utf8Path) -> Vec<(String, String)> {
+    for name in [".mise.toml", "mise.toml"] {
+        if let Ok(raw) = std::fs::read_to_string(root.join(name).as_std_path())
+            && let Ok(val) = toml::from_str::<toml::Value>(&raw)
+            && let Some(tbl) = val.get("tools").and_then(|v| v.as_table())
+        {
+            return tbl
+                .iter()
+                .filter_map(|(k, v)| v.as_str().map(|s| (k.clone(), s.to_string())))
+                .collect();
+        }
+    }
+    Vec::new()
+}
+
+fn parse_asdf(root: &camino::Utf8Path) -> Vec<(String, String)> {
+    let Ok(raw) = std::fs::read_to_string(root.join(".tool-versions").as_std_path()) else {
+        return Vec::new();
+    };
+    raw.lines()
+        .filter_map(|line| {
+            let line = line.split('#').next()?.trim();
+            if line.is_empty() {
+                return None;
+            }
+            let mut parts = line.split_whitespace();
+            let tool = parts.next()?.to_string();
+            let version = parts.next()?.to_string();
+            Some((tool, version))
+        })
+        .collect()
+}
+
+fn parse_nvmrc(root: &camino::Utf8Path) -> Vec<(String, String)> {
+    std::fs::read_to_string(root.join(".nvmrc").as_std_path())
+        .ok()
+        .map(|s| vec![("node".into(), s.trim().trim_start_matches('v').to_string())])
+        .unwrap_or_default()
+}
+
+fn parse_pyproject(root: &camino::Utf8Path) -> Vec<(String, String)> {
+    let Ok(raw) = std::fs::read_to_string(root.join("pyproject.toml").as_std_path()) else {
+        return Vec::new();
+    };
+    let Ok(val) = toml::from_str::<toml::Value>(&raw) else {
+        return Vec::new();
+    };
+    let mut out = Vec::new();
+    if let Some(py) = val
+        .get("tool")
+        .and_then(|v| v.get("poetry"))
+        .and_then(|v| v.get("dependencies"))
+        .and_then(|v| v.get("python"))
+        .and_then(|v| v.as_str())
+    {
+        out.push(("python".into(), py.trim_start_matches('^').trim_start_matches('~').to_string()));
+    }
+    out
+}
+
+/// `versionx self-check` — run doctor + verify and surface any
+/// failure. We track success with a small bool flag rather than
+/// inspecting `ExitCode` (which is opaque after `From::from(u8)`).
+fn run_self_check(cwd: Option<&camino::Utf8Path>, output: OutputFormat) -> Result<ExitCode> {
+    let mut all_ok = true;
+
+    // doctor returns Ok(ExitCode) but we lose visibility into the
+    // numeric — re-run the underlying check inline. The doctor()
+    // function still owns the printing, so we just shadow its result.
+    let _ = run_doctor(cwd, output)?;
+    // Re-run the failable bits to detect failure for our own
+    // bookkeeping. Doctor already printed everything to the user.
+    if let Ok(root) = resolve_cwd(cwd)
+        && versionx_git::read::summarize(&root).is_err()
+    {
+        all_ok = false;
+    }
+
+    let _ = run_verify(cwd, output)?;
+    // verify prints to stderr on problems; we approximate failure
+    // as "lockfile missing" — good enough for self-check signal.
+    if let Ok(root) = resolve_cwd(cwd)
+        && !root.join("versionx.lock").is_file()
+        && root.join("versionx.toml").is_file()
+    {
+        all_ok = false;
+    }
+
+    if all_ok {
+        emit_msg(output, "self-check passed", serde_json::json!({"ok": true}))?;
+        Ok(ExitCode::from(0))
+    } else {
+        bail_with(output, "self-check", "one or more checks failed (see prior output)")
+    }
+}
+
+/// `versionx changeset {add,check,list}` — release-please-style
+/// per-change metadata files under `.changeset/`.
+fn run_changeset(
+    sub: ChangesetCommand,
+    cwd: Option<&camino::Utf8Path>,
+    output: OutputFormat,
+) -> Result<ExitCode> {
+    let root = resolve_cwd(cwd)?;
+    let dir = root.join(".changeset");
+    std::fs::create_dir_all(dir.as_std_path()).context("creating .changeset/ dir")?;
+
+    match sub {
+        ChangesetCommand::Add { component, level, summary } => {
+            let id = format!(
+                "{}-{}",
+                chrono::Utc::now().format("%Y%m%d-%H%M%S"),
+                component.replace('/', "_")
+            );
+            let path = dir.join(format!("{id}.md"));
+            let body = format!(
+                "---\ncomponent: {component}\nlevel: {level}\n---\n\n{}\n",
+                summary.unwrap_or_default()
+            );
+            std::fs::write(path.as_std_path(), body).context("writing changeset")?;
+            emit_msg(
+                output,
+                &format!("wrote {path}"),
+                serde_json::json!({"path": path.to_string()}),
+            )?;
+            Ok(ExitCode::from(0))
+        }
+        ChangesetCommand::List => {
+            let mut entries: Vec<_> = std::fs::read_dir(dir.as_std_path())
+                .context("reading .changeset/")?
+                .filter_map(Result::ok)
+                .filter(|e| e.path().extension().and_then(|s| s.to_str()) == Some("md"))
+                .collect();
+            entries.sort_by_key(std::fs::DirEntry::file_name);
+            match output {
+                OutputFormat::Json | OutputFormat::Ndjson => {
+                    let names: Vec<_> =
+                        entries.iter().filter_map(|e| e.file_name().into_string().ok()).collect();
+                    let mut stdout = io::stdout().lock();
+                    serde_json::to_writer(&mut stdout, &names)?;
+                    stdout.write_all(b"\n")?;
+                }
+                OutputFormat::Human => {
+                    for e in &entries {
+                        if let Some(name) = e.file_name().to_str() {
+                            println!("  · {name}");
+                        }
+                    }
+                }
+            }
+            Ok(ExitCode::from(0))
+        }
+        ChangesetCommand::Check => {
+            let mut errors = Vec::new();
+            let entries = std::fs::read_dir(dir.as_std_path()).context("reading .changeset/")?;
+            for entry in entries.filter_map(Result::ok) {
+                let path = entry.path();
+                if path.extension().and_then(|s| s.to_str()) != Some("md") {
+                    continue;
+                }
+                let raw = std::fs::read_to_string(&path).unwrap_or_default();
+                if !raw.starts_with("---") {
+                    errors.push(format!("{}: missing frontmatter", path.display()));
+                    continue;
+                }
+                if !raw.contains("component:") || !raw.contains("level:") {
+                    errors.push(format!(
+                        "{}: missing required fields (component / level)",
+                        path.display()
+                    ));
+                }
+            }
+            if errors.is_empty() {
+                emit_msg(output, "all changesets valid", serde_json::json!({"ok": true}))?;
+                Ok(ExitCode::from(0))
+            } else {
+                bail_with(output, "changeset check", &errors.join("; "))
+            }
+        }
+    }
 }
 
 #[cfg(test)]

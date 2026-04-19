@@ -60,7 +60,7 @@ pub fn from_semver(input: &str, target: Ecosystem) -> Translated {
             let mut out = format!("{}.{}.{}", v.major, v.minor, v.patch);
             if !v.pre.is_empty() {
                 // PEP 440 pre-releases: aN/bN/rcN with no dots.
-                out.push_str(&semver_pre_to_pep440(&v.pre.as_str().to_string(), &mut warnings));
+                out.push_str(&semver_pre_to_pep440(v.pre.as_str(), &mut warnings));
             }
             if !v.build.is_empty() {
                 // PEP 440 local segment uses `+tag` with alnum only.
@@ -106,10 +106,9 @@ pub fn into_semver(input: &str, source: Ecosystem) -> Translated {
         Ecosystem::Rubygems => {
             // `1.2.3.rc.1` → `1.2.3-rc.1`.
             let (core, tail) = split_on_first_prerelease(input);
-            let out = if let Some(tail) = tail {
-                format!("{core}-{}", tail.trim_start_matches('.'))
-            } else {
-                core.to_string()
+            let out = match tail {
+                Some(t) => format!("{core}-{}", t.trim_start_matches('.')),
+                None => core,
             };
             Translated { output: out, warnings }
         }
@@ -198,7 +197,7 @@ fn split_on_first_prerelease(input: &str) -> (String, Option<String>) {
     // alphabetic segment.
     let mut parts = input.split('.').collect::<Vec<_>>();
     for i in 0..parts.len() {
-        if parts[i].chars().any(|c| c.is_alphabetic()) {
+        if parts[i].chars().any(char::is_alphabetic) {
             let core = parts[..i].join(".");
             let tail = parts.split_off(i).join(".");
             return (core, Some(tail));

@@ -8,11 +8,10 @@
 //!   `[components.<id>]` baselines, generate CHANGELOG entries, commit,
 //!   and tag.
 //!
-//! Intentionally out of scope for 0.4 (deferred to 0.5+):
-//! - Registry publishing (npm / PyPI / crates.io / RubyGems) and OIDC
-//!   trusted-publishing credentials.
-//! - Changesets-file workflow (separate strategy).
-//! - Rollback / snapshot / prerelease lifecycle.
+//! Cross-ecosystem version translation lives in [`translate`] and is
+//! applied transparently by [`writeback::write_version`] so a SemVer
+//! pre-release like `1.2.3-rc.1` lands in PyPI manifests as
+//! `1.2.3rc1` (PEP 440) and in RubyGems specs as `1.2.3.rc.1`.
 //!
 //! See `docs/spec/05-release-orchestration.md` and
 //! `docs/spec/11-version-roadmap.md §0.4.0`.
@@ -43,6 +42,8 @@ pub mod conventional;
 pub mod git;
 pub mod plan;
 pub mod propose;
+pub mod publish;
+pub mod translate;
 pub mod writeback;
 
 pub use apply::{AppliedBump, ApplyError, ApplyInput, ApplyOutcome, ApplyResult, apply};
@@ -54,6 +55,10 @@ pub use plan::{
     plans_dir, validate_for_apply,
 };
 pub use propose::{ProposeError, ProposeInput, ProposeResult, ReleaseGroup, propose};
+pub use publish::{
+    PublishError, PublishOutcome, PublishResult, Registry, oidc_available,
+    publish as publish_component,
+};
 
 /// Crate version as declared in `Cargo.toml`.
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");

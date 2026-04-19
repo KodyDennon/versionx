@@ -50,6 +50,8 @@ versionx-release.workspace = true
 versionx-policy.workspace = true
 versionx-lockfile.workspace = true
 versionx-state.workspace = true
+axum = { workspace = true }
+tower = { workspace = true }
 
 [dev-dependencies]
 tempfile.workspace = true

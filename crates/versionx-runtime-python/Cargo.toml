@@ -28,6 +28,8 @@ hex.workspace = true
 regex.workspace = true
 versionx-runtime-trait.workspace = true
 versionx-events.workspace = true
+semver.workspace = true
+which.workspace = true
 
 [dev-dependencies]
 tempfile.workspace = true

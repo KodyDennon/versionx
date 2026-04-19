@@ -1,7 +1,7 @@
 //! `policy_check` — evaluate policies against the workspace.
 
 use serde_json::{Value, json};
-use versionx_policy::{PolicySet, evaluate, load_dir};
+use versionx_policy::{evaluate, load_and_verify};
 
 use super::{ToolDescriptor, ToolOutput, resolve_root};
 use crate::McpResult;
@@ -25,9 +25,7 @@ pub fn descriptor() -> ToolDescriptor {
 
 pub fn call(params: Value, ctx: &McpContext) -> McpResult<ToolOutput> {
     let root = resolve_root(&params, ctx);
-    let dir = versionx_policy::default_policies_dir(&root);
-    let docs = load_dir(&dir, &[]).map_err(|e| crate::McpError::Tool(e.to_string()))?;
-    let set = PolicySet::from_documents(&docs).map_err(|e| crate::McpError::Tool(e.to_string()))?;
+    let set = load_and_verify(&root, &[]).map_err(|e| crate::McpError::Tool(e.to_string()))?;
     // Build a minimal PolicyContext from the workspace; for 0.6 we
     // mirror the CLI's `policy check` minus the runtime-pin read so the
     // MCP tool stays fast + pure.

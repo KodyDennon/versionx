@@ -35,20 +35,39 @@ pub enum WriteBackError {
 pub type WriteBackResult<T> = Result<T, WriteBackError>;
 
 /// Dispatch to the right writer based on the component kind.
+///
+/// `new_version` is in canonical SemVer (e.g. `1.2.3-rc.1`). We
+/// translate to the ecosystem-native form before writing — Python
+/// gets PEP 440 (`1.2.3rc1`), Ruby gets RubyGems-format
+/// (`1.2.3.rc.1`), Rust + Node already use SemVer verbatim.
 pub fn write_version(
     component_root: &Utf8Path,
     kind: &str,
     new_version: &str,
 ) -> WriteBackResult<Utf8PathBuf> {
+    let native = native_version(kind, new_version);
     match kind {
-        "rust" => write_cargo(&component_root.join("Cargo.toml"), new_version),
-        "node" => write_package_json(&component_root.join("package.json"), new_version),
-        "python" => write_pyproject(&component_root.join("pyproject.toml"), new_version),
+        "rust" => write_cargo(&component_root.join("Cargo.toml"), &native),
+        "node" => write_package_json(&component_root.join("package.json"), &native),
+        "python" => write_pyproject(&component_root.join("pyproject.toml"), &native),
         other => Err(WriteBackError::Unsupported {
             kind: other.into(),
             path: component_root.to_path_buf(),
         }),
     }
+}
+
+/// Translate a SemVer version into the ecosystem-native form.
+/// Pure function so tests can pin the mapping without disk IO.
+#[must_use]
+pub fn native_version(kind: &str, semver: &str) -> String {
+    use crate::translate::{Ecosystem, from_semver};
+    let target = match kind {
+        "python" => Some(Ecosystem::Pep440),
+        "ruby" | "rubygems" => Some(Ecosystem::Rubygems),
+        _ => None, // rust/node/anything else stays SemVer-canonical
+    };
+    target.map_or_else(|| semver.to_string(), |t| from_semver(semver, t).output)
 }
 
 // --------- Cargo.toml ----------------------------------------------------
@@ -221,6 +240,40 @@ fn write_atomic(path: &Utf8Path, body: &str) -> WriteBackResult<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn native_version_translates_python_prerelease() {
+        assert_eq!(native_version("python", "1.2.3-rc.1"), "1.2.3rc1");
+        assert_eq!(native_version("python", "2.0.0-alpha.4"), "2.0.0a4");
+        assert_eq!(native_version("python", "1.0.0"), "1.0.0");
+    }
+
+    #[test]
+    fn native_version_translates_rubygems_prerelease() {
+        assert_eq!(native_version("rubygems", "1.2.3-rc.1"), "1.2.3.rc.1");
+    }
+
+    #[test]
+    fn native_version_passes_through_semver_for_rust_node() {
+        assert_eq!(native_version("rust", "1.2.3-rc.1"), "1.2.3-rc.1");
+        assert_eq!(native_version("node", "1.2.3-rc.1"), "1.2.3-rc.1");
+    }
+
+    #[test]
+    fn write_pyproject_translates_to_pep440() {
+        let tmp = tempfile::tempdir().unwrap();
+        let p = Utf8PathBuf::from_path_buf(tmp.path().join("pyproject.toml")).unwrap();
+        fs::write(p.as_std_path(), "[project]\nname = \"x\"\nversion = \"1.0.0\"\n").unwrap();
+        // Caller passes SemVer; writer translates to PEP 440 on disk.
+        write_version(
+            &Utf8PathBuf::from_path_buf(tmp.path().to_path_buf()).unwrap(),
+            "python",
+            "1.2.3-rc.1",
+        )
+        .unwrap();
+        let back = fs::read_to_string(p.as_std_path()).unwrap();
+        assert!(back.contains("version = \"1.2.3rc1\""), "got: {back}");
+    }
 
     #[test]
     fn cargo_inline_version() {

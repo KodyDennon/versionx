@@ -211,6 +211,35 @@ impl State {
         Ok(())
     }
 
+    /// Insert a fully-formed historical run. Used by `state repair`
+    /// when replaying events from `refs/versionx/history` — the
+    /// timestamps come from the recorded events, not "now".
+    pub fn replay_run(
+        &self,
+        repo_id: Option<i64>,
+        command: &str,
+        started_at: DateTime<Utc>,
+        outcome: RunOutcome,
+        plan_id: Option<&str>,
+        versionx_version: Option<&str>,
+    ) -> StateResult<i64> {
+        let conn = self.conn.lock();
+        conn.execute(
+            "INSERT INTO runs (repo_id, command, started_at, ended_at,
+                               outcome, exit_code, plan_id, versionx_version)
+             VALUES (?1, ?2, ?3, ?3, ?4, 0, ?5, ?6)",
+            params![
+                repo_id,
+                command,
+                started_at.to_rfc3339(),
+                outcome.as_str(),
+                plan_id,
+                versionx_version.unwrap_or(env!("CARGO_PKG_VERSION")),
+            ],
+        )?;
+        Ok(conn.last_insert_rowid())
+    }
+
     /// Return the most recent `limit` runs, newest first.
     pub fn recent_runs(&self, limit: u32) -> StateResult<Vec<Run>> {
         let conn = self.conn.lock();

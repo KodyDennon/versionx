@@ -258,3 +258,34 @@ pub async fn serve_stdio(server: VersionxServer) -> anyhow::Result<()> {
     running.waiting().await.map_err(|e| anyhow::anyhow!("{e}"))?;
     Ok(())
 }
+
+/// Serve over loopback HTTP using rmcp's streamable-http transport.
+/// Binds 127.0.0.1:`port`. Blocks until the listener is dropped or
+/// shutdown is signalled.
+///
+/// Security note: we bind to loopback only and rely on rmcp's default
+/// `allowed_hosts` (`localhost` / `127.0.0.1` / `::1`) for DNS-rebind
+/// protection. Public exposure is intentionally not supported here —
+/// agents that need it can put a reverse proxy in front.
+pub async fn serve_http(server: VersionxServer, port: u16) -> anyhow::Result<()> {
+    use std::sync::Arc;
+
+    use rmcp::transport::streamable_http_server::{
+        StreamableHttpServerConfig, StreamableHttpService, session::local::LocalSessionManager,
+    };
+
+    let session_manager = Arc::new(LocalSessionManager::default());
+    let config = StreamableHttpServerConfig::default();
+    let server_for_factory = server.clone();
+    let service =
+        StreamableHttpService::new(move || Ok(server_for_factory.clone()), session_manager, config);
+
+    let listener = tokio::net::TcpListener::bind(("127.0.0.1", port))
+        .await
+        .map_err(|e| anyhow::anyhow!("bind 127.0.0.1:{port}: {e}"))?;
+    tracing::info!(port, "MCP HTTP transport listening on 127.0.0.1:{port}");
+    axum::serve(listener, axum::Router::new().fallback_service(service))
+        .await
+        .map_err(|e| anyhow::anyhow!("axum serve: {e}"))?;
+    Ok(())
+}

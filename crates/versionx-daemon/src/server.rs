@@ -37,7 +37,7 @@ use crate::protocol::{
     ErrorObject, Message, Notification, Request, Response, methods, notifications,
 };
 use crate::transport::{DuplexStream, Listener, framed};
-use crate::watcher;
+use crate::watcher::{self, CacheInvalidator, WatcherHandle};
 
 /// Runtime configuration for the daemon.
 #[derive(Clone, Debug)]
@@ -61,9 +61,9 @@ impl ServerConfig {
 
 /// Shared state across connections.
 struct State {
-    /// Cached workspace snapshots keyed by canonicalized root path.
-    /// Each entry is invalidated when the watcher sees a relevant change.
-    snapshots: RwLock<HashMap<Utf8PathBuf, CachedSnapshot>>,
+    /// Cached workspace snapshots, behind a type that the fs watcher
+    /// can invalidate without needing access to the full `State`.
+    snapshots: Arc<SnapshotCache>,
     /// Notification fanout. Each subscriber holds a [`broadcast::Receiver`]
     /// and filters by channel name on their side (kept simple — filtering
     /// on send side means multiple senders per channel type).
@@ -76,6 +76,40 @@ struct State {
     shutdown: Arc<Notify>,
     /// Server start time (for `server.info`).
     started_at: Instant,
+    /// The fs watcher. We keep it on `State` so `handle_workspace` can
+    /// register newly-discovered roots dynamically.
+    watcher: WatcherHandle,
+}
+
+/// Workspace snapshot cache shared between the request path (which
+/// reads + populates) and the fs watcher (which evicts).
+///
+/// We keep this as its own type so the watcher can invalidate without
+/// pulling in the rest of `State`.
+struct SnapshotCache {
+    inner: RwLock<HashMap<Utf8PathBuf, CachedSnapshot>>,
+}
+
+impl SnapshotCache {
+    fn new() -> Self {
+        Self { inner: RwLock::new(HashMap::new()) }
+    }
+}
+
+impl CacheInvalidator for SnapshotCache {
+    fn invalidate(&self, changed_paths: &[std::path::PathBuf]) {
+        if changed_paths.is_empty() {
+            return;
+        }
+        let mut cache = self.inner.write();
+        // Drop any cached entry whose root is an ancestor of (or equal
+        // to) any changed path. We err on the side of evicting too
+        // much — a recompute is cheaper than a stale cache hit.
+        cache.retain(|root, _| {
+            let root_std = root.as_std_path();
+            !changed_paths.iter().any(|p| p.starts_with(root_std))
+        });
+    }
 }
 
 struct CachedSnapshot {
@@ -104,20 +138,25 @@ pub async fn run(config: ServerConfig) -> anyhow::Result<()> {
 
     // 3. Set up shared state + fanout channel.
     let (notify_tx, _) = broadcast::channel(config.notification_capacity);
+    let snapshots = Arc::new(SnapshotCache::new());
+
+    // 4. Start the fs watcher *before* building State so we can hand
+    //    its handle to State for dynamic root registration. The watcher
+    //    holds an Arc to `snapshots` so it can evict on file changes.
+    let watcher_handle =
+        watcher::spawn(notify_tx.clone(), snapshots.clone() as Arc<dyn CacheInvalidator>)?;
+
     let state = Arc::new(State {
-        snapshots: RwLock::new(HashMap::new()),
+        snapshots,
         notify_tx,
         last_activity: Mutex::new(Instant::now()),
         shutdown: Arc::new(Notify::new()),
         started_at: Instant::now(),
+        watcher: watcher_handle,
     });
 
-    // 4. Start the idle watchdog.
+    // 5. Start the idle watchdog.
     let watchdog_handle = spawn_idle_watchdog(state.clone(), config.idle_timeout);
-
-    // 5. Start the fs watcher (fire-and-forget — it'll emit notifications
-    //    through state.notify_tx when workspace files change).
-    let watcher_handle = watcher::spawn(state.notify_tx.clone())?;
 
     // 6. Accept loop — exits when shutdown is signaled.
     let shutdown_notify = state.shutdown.clone();
@@ -160,8 +199,10 @@ pub async fn run(config: ServerConfig) -> anyhow::Result<()> {
         .send(Notification::new(notifications::SHUTTING_DOWN, serde_json::json!({})));
 
     drop(listener);
-    drop(watcher_handle);
     watchdog_handle.abort();
+    // The watcher is owned by `state`; dropping the last Arc to State
+    // (when this function returns + per-connection tasks finish) shuts
+    // it down.
     info!("versiond shutdown complete");
     Ok(())
 }
@@ -344,7 +385,7 @@ fn handle_workspace(
     let root = normalize_root(&p.root)?;
 
     // Fast path: warm cache, no fs work.
-    if let Some(cached) = state.snapshots.read().get(&root) {
+    if let Some(cached) = state.snapshots.inner.read().get(&root) {
         return Ok(match op {
             WorkspaceOp::List => cached.workspace_list.clone(),
             WorkspaceOp::Status => cached.workspace_status.clone(),
@@ -353,11 +394,16 @@ fn handle_workspace(
     }
 
     // Slow path: compute + cache. We do discovery outside the lock to
-    // keep contention low.
+    // keep contention low. We also register this root with the fs
+    // watcher so future edits invalidate the cache we're about to fill.
+    if let Err(e) = state.watcher.watch(root.as_std_path()) {
+        // Non-fatal — caching still works, we just lose tightness.
+        warn!(?root, "watcher.watch failed: {e}");
+    }
     let computed = compute_snapshot(&root)?;
-    state.snapshots.write().insert(root.clone(), computed);
+    state.snapshots.inner.write().insert(root.clone(), computed);
 
-    let cache = state.snapshots.read();
+    let cache = state.snapshots.inner.read();
     let c = cache
         .get(&root)
         .ok_or_else(|| ErrorObject::new(ErrorObject::INTERNAL_ERROR, "cache vanished"))?;

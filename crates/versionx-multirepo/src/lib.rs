@@ -45,7 +45,12 @@ pub mod fleet;
 pub mod links;
 pub mod saga;
 pub mod state;
-pub mod translate;
+
+/// Re-export of the cross-ecosystem version translator. Lives in
+/// `versionx-release` so the writeback path can use it without
+/// importing this crate; we keep the shorthand `versionx_multirepo::translate`
+/// alias for back-compat.
+pub use versionx_release::translate;
 
 pub use fleet::{FleetConfig, FleetError, FleetResult, Member, ReleaseSet};
 pub use links::{
@@ -59,7 +64,7 @@ pub use saga::{
 pub use state::{
     BackupManifest, StateError, StateResult, backup, record_release_apply, repair, restore,
 };
-pub use translate::{Ecosystem, Translated, Warning, from_semver, into_semver};
+pub use versionx_release::translate::{Ecosystem, Translated, Warning, from_semver, into_semver};
 
 /// Crate version.
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");

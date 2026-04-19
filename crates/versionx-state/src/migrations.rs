@@ -7,7 +7,11 @@ use rusqlite_migration::{M, Migrations};
 
 /// Ordered list of migrations. Index + 1 = `schema_migrations.version`.
 pub(crate) fn migrations() -> Migrations<'static> {
-    Migrations::new(vec![M::up(V1_INITIAL)])
+    Migrations::new(vec![
+        M::up(V1_INITIAL),
+        M::up(V2_POLICY_EVALUATIONS),
+        M::up(V3_CHANGELOG_VOICE),
+    ])
 }
 
 const V1_INITIAL: &str = r"
@@ -57,6 +61,42 @@ CREATE TABLE runs (
     agent_id          TEXT
 );
 CREATE INDEX idx_runs_repo ON runs(repo_id, started_at DESC);
+";
+
+// 0.5 — durable history of policy evaluations so `policy stats` can
+// answer "what fired this week" without re-running every policy
+// across every commit.
+const V2_POLICY_EVALUATIONS: &str = r"
+CREATE TABLE policy_evaluations (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    repo_id         INTEGER REFERENCES repos(id) ON DELETE SET NULL,
+    evaluated_at    TEXT    NOT NULL,
+    trigger         TEXT,
+    policy_name     TEXT    NOT NULL,
+    severity        TEXT    NOT NULL,
+    waived          INTEGER NOT NULL DEFAULT 0,
+    finding_json    TEXT    NOT NULL,
+    plan_id         TEXT,
+    git_sha         TEXT
+);
+CREATE INDEX idx_policy_eval_repo_time
+    ON policy_evaluations(repo_id, evaluated_at DESC);
+CREATE INDEX idx_policy_eval_policy
+    ON policy_evaluations(policy_name);
+";
+
+// 0.6 — per-component changelog voice/style memory so the
+// AI-as-client changelog generator can match the project's
+// established cadence (terse vs narrative, emoji vs plain, etc.).
+const V3_CHANGELOG_VOICE: &str = r"
+CREATE TABLE changelog_voice (
+    repo_id         INTEGER NOT NULL REFERENCES repos(id) ON DELETE CASCADE,
+    component_id    TEXT    NOT NULL,
+    voice           TEXT    NOT NULL,
+    samples_json    TEXT,
+    updated_at      TEXT    NOT NULL,
+    PRIMARY KEY (repo_id, component_id)
+);
 ";
 
 #[cfg(test)]

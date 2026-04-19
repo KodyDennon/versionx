@@ -50,7 +50,7 @@ pub mod tools;
 pub use ai::{Provider, ProviderConfig, ProviderKind, drive as drive_provider};
 pub use audit::{AuditEntry, AuditLog};
 pub use context::McpContext;
-pub use server::{VersionxServer, serve_stdio};
+pub use server::{VersionxServer, serve_http, serve_stdio};
 
 use rmcp::ErrorData as RpcError;
 use rmcp::model::ErrorCode;

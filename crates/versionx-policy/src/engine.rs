@@ -21,6 +21,7 @@ use chrono::Utc;
 
 use crate::context::PolicyContext;
 use crate::finding::{PolicyReport, ReportedFinding};
+use crate::lockfile::{self, LockfileError, PolicyLockfile};
 use crate::rules;
 use crate::sandbox::LuauSandbox;
 use crate::schema::{self, Policy, PolicyDocument, Trigger, Waiver};
@@ -44,6 +45,16 @@ pub enum EngineError {
     DuplicatePolicy { name: String, path: Utf8PathBuf },
     #[error("sandbox init failed: {0}")]
     Sandbox(#[from] crate::sandbox::SandboxError),
+    #[error("policy lockfile error: {0}")]
+    Lockfile(#[from] LockfileError),
+    #[error(
+        "policy lockfile mismatch at `{path}`: recorded blake3 `{recorded}`, current `{current}`"
+    )]
+    HashMismatch { path: Utf8PathBuf, recorded: String, current: String },
+    #[error("sealed policy `{name}` is missing from the loaded set (recorded by `{source_path}`)")]
+    SealedMissing { name: String, source_path: String },
+    #[error("sealed policy `{name}` is no longer sealed in the loaded set")]
+    SealedUnsealed { name: String },
 }
 
 pub type EngineResult<T> = Result<T, EngineError>;
@@ -170,6 +181,86 @@ pub fn default_policies_dir(workspace_root: &Utf8Path) -> Utf8PathBuf {
     workspace_root.join(".versionx/policies")
 }
 
+/// Conventional location of the policy lockfile (sibling to
+/// `versionx.toml`).
+#[must_use]
+pub fn default_lockfile_path(workspace_root: &Utf8Path) -> Utf8PathBuf {
+    workspace_root.join("versionx.policy.lock")
+}
+
+/// Verify a freshly-loaded set of policy documents against a lockfile.
+///
+/// For each [`crate::lockfile::LockedSource`] we:
+///   1. Hash the file at `LockedSource.path` (relative to
+///      `workspace_root`) and compare against the recorded blake3.
+///      A mismatch is a [`EngineError::HashMismatch`].
+///   2. Verify that every name in `LockedSource.sealed` is still
+///      present in `set` and still has `sealed = true`. A missing or
+///      unsealed name is a hard error.
+///
+/// Sources listed in the lockfile but absent on disk are silently
+/// skipped — those represent vendored upstream files that the user
+/// pruned. Hash drift on a present file is what we actually want to
+/// catch.
+pub fn verify_lockfile(
+    lockfile: &PolicyLockfile,
+    set: &PolicySet,
+    workspace_root: &Utf8Path,
+) -> EngineResult<()> {
+    let policy_index: std::collections::BTreeMap<&str, &Policy> =
+        set.policies.iter().map(|p| (p.name.as_str(), p)).collect();
+
+    for source in &lockfile.sources {
+        let path = workspace_root.join(&source.path);
+        if path.is_file() {
+            let current = lockfile::hash_source(&path)
+                .map_err(|e| EngineError::Io { path: path.clone(), source: e })?;
+            if current != source.blake3 {
+                return Err(EngineError::HashMismatch {
+                    path,
+                    recorded: source.blake3.clone(),
+                    current,
+                });
+            }
+        }
+        for sealed_name in &source.sealed {
+            match policy_index.get(sealed_name.as_str()) {
+                None => {
+                    return Err(EngineError::SealedMissing {
+                        name: sealed_name.clone(),
+                        source_path: source.path.clone(),
+                    });
+                }
+                Some(p) if !p.sealed => {
+                    return Err(EngineError::SealedUnsealed { name: sealed_name.clone() });
+                }
+                Some(_) => {}
+            }
+        }
+    }
+    Ok(())
+}
+
+/// Convenience: load + flatten + verify-against-lockfile in one shot.
+///
+/// If `versionx.policy.lock` exists at `workspace_root`, its seals
+/// are enforced against the loaded set. Absence is treated as
+/// "lockfile not in use" (warn-on-CI is the caller's responsibility).
+pub fn load_and_verify(
+    workspace_root: &Utf8Path,
+    extras: &[Utf8PathBuf],
+) -> EngineResult<PolicySet> {
+    let dir = default_policies_dir(workspace_root);
+    let docs = load_dir(&dir, extras)?;
+    let set = PolicySet::from_documents(&docs)?;
+    let lock_path = default_lockfile_path(workspace_root);
+    if lock_path.is_file() {
+        let lockfile = PolicyLockfile::load(&lock_path)?;
+        verify_lockfile(&lockfile, &set, workspace_root)?;
+    }
+    Ok(set)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -251,5 +342,83 @@ mod tests {
             message: None,
             fields: BTreeMap::new(),
         }
+    }
+
+    #[test]
+    fn lockfile_verify_passes_on_intact_set() {
+        use crate::lockfile::{LockedSource, PolicyLockfile};
+        let tmp = tempfile::tempdir().unwrap();
+        let root = camino::Utf8PathBuf::from_path_buf(tmp.path().to_path_buf()).unwrap();
+        let policies_dir = default_policies_dir(&root);
+        std::fs::create_dir_all(policies_dir.as_std_path()).unwrap();
+        let pol_path = policies_dir.join("main.toml");
+        std::fs::write(
+            pol_path.as_std_path(),
+            "[[policy]]\nname = \"keep\"\nkind = \"release_gate\"\nseverity = \"deny\"\nsealed = true\n",
+        )
+        .unwrap();
+        let docs = load_dir(&policies_dir, &[]).unwrap();
+        let set = PolicySet::from_documents(&docs).unwrap();
+
+        let mut lf = PolicyLockfile::new();
+        lf.sources.push(LockedSource {
+            path: ".versionx/policies/main.toml".to_string(),
+            blake3: crate::lockfile::hash_source(&pol_path).unwrap(),
+            sealed: vec!["keep".into()],
+        });
+        verify_lockfile(&lf, &set, &root).expect("verify passes on intact set");
+    }
+
+    #[test]
+    fn lockfile_verify_catches_hash_drift() {
+        use crate::lockfile::{LockedSource, PolicyLockfile};
+        let tmp = tempfile::tempdir().unwrap();
+        let root = camino::Utf8PathBuf::from_path_buf(tmp.path().to_path_buf()).unwrap();
+        let policies_dir = default_policies_dir(&root);
+        std::fs::create_dir_all(policies_dir.as_std_path()).unwrap();
+        let pol_path = policies_dir.join("main.toml");
+        std::fs::write(
+            pol_path.as_std_path(),
+            "[[policy]]\nname = \"keep\"\nkind = \"release_gate\"\nseverity = \"deny\"\nsealed = true\n",
+        )
+        .unwrap();
+        let docs = load_dir(&policies_dir, &[]).unwrap();
+        let set = PolicySet::from_documents(&docs).unwrap();
+
+        let mut lf = PolicyLockfile::new();
+        lf.sources.push(LockedSource {
+            path: ".versionx/policies/main.toml".to_string(),
+            blake3: "blake3:not-the-real-hash".into(),
+            sealed: vec!["keep".into()],
+        });
+        let err = verify_lockfile(&lf, &set, &root).unwrap_err();
+        assert!(matches!(err, EngineError::HashMismatch { .. }));
+    }
+
+    #[test]
+    fn lockfile_verify_catches_unsealed_policy() {
+        use crate::lockfile::{LockedSource, PolicyLockfile};
+        let tmp = tempfile::tempdir().unwrap();
+        let root = camino::Utf8PathBuf::from_path_buf(tmp.path().to_path_buf()).unwrap();
+        let policies_dir = default_policies_dir(&root);
+        std::fs::create_dir_all(policies_dir.as_std_path()).unwrap();
+        let pol_path = policies_dir.join("main.toml");
+        // Note: `sealed = true` is deliberately omitted here.
+        std::fs::write(
+            pol_path.as_std_path(),
+            "[[policy]]\nname = \"keep\"\nkind = \"release_gate\"\nseverity = \"deny\"\n",
+        )
+        .unwrap();
+        let docs = load_dir(&policies_dir, &[]).unwrap();
+        let set = PolicySet::from_documents(&docs).unwrap();
+
+        let mut lf = PolicyLockfile::new();
+        lf.sources.push(LockedSource {
+            path: ".versionx/policies/main.toml".to_string(),
+            blake3: crate::lockfile::hash_source(&pol_path).unwrap(),
+            sealed: vec!["keep".into()],
+        });
+        let err = verify_lockfile(&lf, &set, &root).unwrap_err();
+        assert!(matches!(err, EngineError::SealedUnsealed { .. }));
     }
 }

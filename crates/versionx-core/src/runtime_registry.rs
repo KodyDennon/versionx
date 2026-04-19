@@ -8,7 +8,7 @@ use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use versionx_runtime_node::{NodeInstaller, PnpmInstaller, YarnInstaller};
-use versionx_runtime_python::PythonInstaller;
+use versionx_runtime_python::{PoetryInstaller, PythonInstaller, UvInstaller};
 use versionx_runtime_rust::RustInstaller;
 use versionx_runtime_trait::RuntimeInstaller;
 
@@ -47,11 +47,15 @@ pub fn registry() -> RuntimeRegistry {
     let rust: Arc<dyn RuntimeInstaller> = Arc::new(RustInstaller::new());
     let pnpm: Arc<dyn RuntimeInstaller> = Arc::new(PnpmInstaller::new());
     let yarn: Arc<dyn RuntimeInstaller> = Arc::new(YarnInstaller::new());
+    let uv: Arc<dyn RuntimeInstaller> = Arc::new(UvInstaller::new());
+    let poetry: Arc<dyn RuntimeInstaller> = Arc::new(PoetryInstaller::new());
     installers.insert(node.id(), node);
     installers.insert(python.id(), python);
     installers.insert(rust.id(), rust);
     installers.insert(pnpm.id(), pnpm);
     installers.insert(yarn.id(), yarn);
+    installers.insert(uv.id(), uv);
+    installers.insert(poetry.id(), poetry);
     RuntimeRegistry { installers }
 }
 
@@ -68,6 +72,8 @@ mod tests {
         assert!(ids.contains(&"rust"));
         assert!(ids.contains(&"pnpm"));
         assert!(ids.contains(&"yarn"));
+        assert!(ids.contains(&"uv"));
+        assert!(ids.contains(&"poetry"));
     }
 
     #[test]

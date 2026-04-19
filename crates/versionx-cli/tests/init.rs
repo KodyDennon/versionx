@@ -126,7 +126,8 @@ fn help_json_flag_emits_command_list() {
     let out = versionx().arg("--help-json").assert().success().get_output().stdout.clone();
 
     let parsed: serde_json::Value = serde_json::from_slice(&out).unwrap();
-    assert!(parsed["commands"].as_array().unwrap().iter().any(|c| c == "init"));
+    let subs = parsed["command"]["subcommands"].as_array().expect("subcommands array");
+    assert!(subs.iter().any(|s| s["name"].as_str() == Some("init")), "expected `init` in {subs:?}");
 }
 
 #[test]

@@ -52,8 +52,9 @@ pub mod waiver;
 
 pub use context::{ContextCommit, ContextComponent, ContextLink, ContextRuntime, PolicyContext};
 pub use engine::{
-    EngineError, EngineResult, LoadedDocument, PolicySet, default_policies_dir, evaluate,
-    evaluate_with_sandbox, load_dir,
+    EngineError, EngineResult, LoadedDocument, PolicySet, default_lockfile_path,
+    default_policies_dir, evaluate, evaluate_with_sandbox, load_and_verify, load_dir,
+    verify_lockfile,
 };
 pub use finding::{Finding, PolicyReport, ReportedFinding, Tally, WaiverHit};
 pub use lockfile::{LockedSource, LockfileError, PolicyLockfile, hash_source};

@@ -32,6 +32,7 @@ git2 = { workspace = true }
 versionx-events.workspace = true
 versionx-config.workspace = true
 versionx-release.workspace = true
+versionx-state.workspace = true
 
 [dev-dependencies]
 tempfile.workspace = true
