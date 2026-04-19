@@ -37,6 +37,7 @@ versionx-runtime-node.workspace = true
 versionx-runtime-python.workspace = true
 versionx-runtime-rust.workspace = true
 which.workspace = true
+toml_edit.workspace = true
 
 [dev-dependencies]
 tempfile.workspace = true

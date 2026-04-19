@@ -46,7 +46,11 @@ pub async fn sync(ctx: &CoreContext, opts: &SyncOptions) -> CoreResult<SyncOutco
         return Err(CoreError::NoConfig { path: config_path.to_string() });
     }
     let effective = versionx_config::load(&config_path)?;
-    let config_hash = blake3_hex(config_path.as_str().as_bytes());
+    // Hash file *content* so sync detects config drift regardless of where
+    // the workspace lives on disk (and so CI caching can key on it).
+    let config_bytes = std::fs::read(&config_path)
+        .map_err(|source| CoreError::Io { path: config_path.to_string(), source })?;
+    let config_hash = blake3_hex(&config_bytes);
 
     let installer_ctx = ctx.installer_ctx();
     let mut installed = Vec::new();

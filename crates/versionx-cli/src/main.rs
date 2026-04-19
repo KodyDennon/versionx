@@ -113,6 +113,10 @@ enum Command {
     #[command(subcommand)]
     Runtime(RuntimeCommand),
 
+    /// User-level default pins (falls back when no versionx.toml pins a tool).
+    #[command(subcommand)]
+    Global(GlobalCommand),
+
     /// Start or manage the `versiond` background daemon.
     #[command(subcommand)]
     Daemon(DaemonCommand),
@@ -183,12 +187,30 @@ enum Shell {
 enum RuntimeCommand {
     /// List installed toolchains.
     List,
-    /// Remove toolchains not pinned by any known repo, older than the cutoff.
+    /// Remove toolchains unused for the given age cutoff.
     Prune {
         /// Minimum age in days before a toolchain is eligible for prune.
         #[arg(long, default_value_t = 90)]
         older_than_days: u32,
+        /// Preview the prune without touching disk.
+        #[arg(long)]
+        dry_run: bool,
+        /// Always keep the newest install per tool.
+        #[arg(long, default_value_t = true)]
+        keep_latest: bool,
     },
+}
+
+#[derive(Subcommand, Debug)]
+enum GlobalCommand {
+    /// Set a user-wide default version for `<tool>`.
+    Set { tool: String, version: String },
+    /// Read the user-wide default for `<tool>` (empty if none).
+    Get { tool: String },
+    /// Remove any user-wide default for `<tool>`.
+    Unset { tool: String },
+    /// List every pinned tool in the user's global config.
+    List,
 }
 
 #[derive(Subcommand, Debug)]
@@ -288,12 +310,13 @@ fn dispatch(cli: Cli) -> Result<ExitCode> {
     match command {
         Command::Init(args) => run_init(&args, cli.cwd.as_deref(), cli.output),
         Command::Sync(args) => block_on(run_sync(args, cli.cwd.as_deref(), cli.output)),
-        Command::Verify => not_yet("verify", "0.1.0"),
+        Command::Verify => run_verify(cli.cwd.as_deref(), cli.output),
         Command::Status => status_stub(cli.output),
         Command::Install(args) => block_on(run_install(args, cli.output)),
         Command::Which { tool } => block_on(run_which(tool, cli.cwd.as_deref(), cli.output)),
         Command::Activate(args) => run_activate(args.shell, cli.output),
-        Command::Runtime(_) => not_yet("runtime", "0.1.0"),
+        Command::Runtime(sub) => run_runtime(sub, cli.output),
+        Command::Global(sub) => run_global(sub, cli.output),
         Command::Daemon(_) => not_yet("daemon", "0.3.0"),
         Command::Tui => not_yet("tui", "0.3.0"),
         Command::Release(_) => not_yet("release", "0.4.0"),
@@ -421,6 +444,201 @@ async fn run_which(
                 println!("unresolved: {}", outcome.reason);
                 return Ok(ExitCode::from(1));
             }
+        }
+    }
+    Ok(ExitCode::from(0))
+}
+
+fn run_verify(cwd: Option<&camino::Utf8Path>, output: OutputFormat) -> Result<ExitCode> {
+    use versionx_core::commands::verify as verify_mod;
+
+    let root = resolve_cwd(cwd)?;
+    let (_bus, ctx) = core_ctx()?;
+    let opts = verify_mod::VerifyOptions { root, deep: false };
+
+    let outcome = match verify_mod::verify(&ctx, &opts) {
+        Ok(o) => o,
+        Err(err) => return Ok(render_core_error(&err, output, "verify")),
+    };
+
+    let ok = outcome.config_hash_ok && outcome.problems.is_empty();
+
+    match output {
+        OutputFormat::Json | OutputFormat::Ndjson => {
+            let mut stdout = io::stdout().lock();
+            serde_json::to_writer(&mut stdout, &outcome)?;
+            stdout.write_all(b"\n")?;
+        }
+        OutputFormat::Human => {
+            if ok {
+                println!("✓ lockfile matches config + every runtime is installed");
+                for rt in &outcome.checked {
+                    let path_str = rt
+                        .install_path
+                        .as_ref()
+                        .map_or_else(|| "<unknown>".to_string(), ToString::to_string);
+                    println!("  {} {} at {}", rt.tool, rt.version, path_str);
+                }
+            } else {
+                eprintln!("✗ verify found {} problem(s):", outcome.problems.len());
+                for p in &outcome.problems {
+                    eprintln!("  - {p:?}");
+                }
+            }
+        }
+    }
+    Ok(ExitCode::from(u8::from(!ok)))
+}
+
+fn run_runtime(sub: RuntimeCommand, output: OutputFormat) -> Result<ExitCode> {
+    use versionx_core::commands::runtime as rt;
+
+    let (_bus, ctx) = core_ctx()?;
+    match sub {
+        RuntimeCommand::List => {
+            let all = match rt::list(&ctx) {
+                Ok(v) => v,
+                Err(err) => return Ok(render_core_error(&err, output, "runtime list")),
+            };
+            match output {
+                OutputFormat::Json | OutputFormat::Ndjson => {
+                    let mut stdout = io::stdout().lock();
+                    serde_json::to_writer(&mut stdout, &all)?;
+                    stdout.write_all(b"\n")?;
+                }
+                OutputFormat::Human => {
+                    if all.is_empty() {
+                        println!("no runtimes installed (try `versionx install node 20`)");
+                    } else {
+                        for rt in &all {
+                            let size_mb = rt.size_bytes / (1024 * 1024);
+                            let status = if rt.on_disk { "ok " } else { "gone" };
+                            println!(
+                                "  [{status}] {:<7} {:<14} {} MiB   {}",
+                                rt.tool, rt.version, size_mb, rt.install_path,
+                            );
+                        }
+                    }
+                }
+            }
+        }
+        RuntimeCommand::Prune { older_than_days, dry_run, keep_latest } => {
+            let opts = rt::PruneOptions { older_than_days, dry_run, keep_latest };
+            let out = match rt::prune(&ctx, &opts) {
+                Ok(v) => v,
+                Err(err) => return Ok(render_core_error(&err, output, "runtime prune")),
+            };
+            match output {
+                OutputFormat::Json | OutputFormat::Ndjson => {
+                    let mut stdout = io::stdout().lock();
+                    serde_json::to_writer(&mut stdout, &out)?;
+                    stdout.write_all(b"\n")?;
+                }
+                OutputFormat::Human => {
+                    let verb = if out.dry_run { "would remove" } else { "removed" };
+                    println!(
+                        "{verb} {} runtime(s), freed {} MiB",
+                        out.removed.len(),
+                        out.freed_bytes / (1024 * 1024)
+                    );
+                    for rt in &out.removed {
+                        println!("  - {} {} ({})", rt.tool, rt.version, rt.install_path);
+                    }
+                    if !out.kept.is_empty() {
+                        println!("kept {}:", out.kept.len());
+                        for rt in &out.kept {
+                            println!("  · {} {}", rt.tool, rt.version);
+                        }
+                    }
+                }
+            }
+        }
+    }
+    Ok(ExitCode::from(0))
+}
+
+fn run_global(sub: GlobalCommand, output: OutputFormat) -> Result<ExitCode> {
+    use versionx_core::commands::global as g;
+
+    let (_bus, ctx) = core_ctx()?;
+    match sub {
+        GlobalCommand::Set { tool, version } => {
+            let out = match g::set(&ctx, &tool, &version) {
+                Ok(o) => o,
+                Err(err) => return Ok(render_core_error(&err, output, "global set")),
+            };
+            match output {
+                OutputFormat::Json | OutputFormat::Ndjson => {
+                    let mut stdout = io::stdout().lock();
+                    serde_json::to_writer(&mut stdout, &out)?;
+                    stdout.write_all(b"\n")?;
+                }
+                OutputFormat::Human => {
+                    if let Some(prev) = &out.previous {
+                        println!("{} {} -> {} ({})", out.tool, prev, out.version, out.path);
+                    } else {
+                        println!("{} = {} ({})", out.tool, out.version, out.path);
+                    }
+                }
+            }
+        }
+        GlobalCommand::Get { tool } => {
+            let out = match g::get(&ctx, &tool) {
+                Ok(o) => o,
+                Err(err) => return Ok(render_core_error(&err, output, "global get")),
+            };
+            match output {
+                OutputFormat::Json | OutputFormat::Ndjson => {
+                    let mut stdout = io::stdout().lock();
+                    serde_json::to_writer(&mut stdout, &out)?;
+                    stdout.write_all(b"\n")?;
+                }
+                OutputFormat::Human => {
+                    if let Some(v) = &out.version {
+                        println!("{v}");
+                    } else {
+                        eprintln!("no global default for `{}`", out.tool);
+                        return Ok(ExitCode::from(1));
+                    }
+                }
+            }
+        }
+        GlobalCommand::Unset { tool } => {
+            let out = match g::unset(&ctx, &tool) {
+                Ok(o) => o,
+                Err(err) => return Ok(render_core_error(&err, output, "global unset")),
+            };
+            match output {
+                OutputFormat::Json | OutputFormat::Ndjson => {
+                    let mut stdout = io::stdout().lock();
+                    serde_json::to_writer(&mut stdout, &out)?;
+                    stdout.write_all(b"\n")?;
+                }
+                OutputFormat::Human => {
+                    if out.removed {
+                        println!(
+                            "unset {} (was {})",
+                            out.tool,
+                            out.previous.as_deref().unwrap_or("?")
+                        );
+                    } else {
+                        println!("{} was not pinned globally", out.tool);
+                    }
+                }
+            }
+        }
+        GlobalCommand::List => {
+            let path = ctx.home.global_config();
+            let Ok(raw) = std::fs::read_to_string(&path) else {
+                match output {
+                    OutputFormat::Json | OutputFormat::Ndjson => {
+                        println!("{{\"path\":\"{path}\",\"runtimes\":{{}}}}");
+                    }
+                    OutputFormat::Human => println!("(no global config yet at {path})"),
+                }
+                return Ok(ExitCode::from(0));
+            };
+            println!("{raw}");
         }
     }
     Ok(ExitCode::from(0))
