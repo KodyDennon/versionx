@@ -34,7 +34,7 @@ members = [
 default-members = ["crates/versionx-cli"]
 
 [workspace.package]
-version = "0.1.0-dev"
+version = "0.1.0"
 edition = "2024"
 rust-version = "1.95"
 authors = ["Kody <kodydennon@gmail.com>"]
@@ -48,31 +48,31 @@ categories = ["command-line-utilities", "development-tools", "development-tools:
 
 [workspace.dependencies]
 # Intra-workspace
-versionx-core            = { path = "crates/versionx-core",            version = "0.1.0-dev" }
-versionx-adapters        = { path = "crates/versionx-adapters",        version = "0.1.0-dev" }
-versionx-adapter-trait   = { path = "crates/versionx-adapter-trait",   version = "0.1.0-dev" }
-versionx-adapter-node    = { path = "crates/versionx-adapter-node",    version = "0.1.0-dev" }
-versionx-adapter-python  = { path = "crates/versionx-adapter-python",  version = "0.1.0-dev" }
-versionx-adapter-rust    = { path = "crates/versionx-adapter-rust",    version = "0.1.0-dev" }
-versionx-workspace       = { path = "crates/versionx-workspace",       version = "0.1.0-dev" }
-versionx-runtime-trait   = { path = "crates/versionx-runtime-trait",   version = "0.1.0-dev" }
-versionx-runtime-node    = { path = "crates/versionx-runtime-node",    version = "0.1.0-dev" }
-versionx-runtime-python  = { path = "crates/versionx-runtime-python",  version = "0.1.0-dev" }
-versionx-runtime-rust    = { path = "crates/versionx-runtime-rust",    version = "0.1.0-dev" }
-versionx-shim            = { path = "crates/versionx-shim",            version = "0.1.0-dev" }
-versionx-config          = { path = "crates/versionx-config",          version = "0.1.0-dev" }
-versionx-lockfile        = { path = "crates/versionx-lockfile",        version = "0.1.0-dev" }
-versionx-state           = { path = "crates/versionx-state",           version = "0.1.0-dev" }
-versionx-policy          = { path = "crates/versionx-policy",          version = "0.1.0-dev" }
-versionx-release         = { path = "crates/versionx-release",         version = "0.1.0-dev" }
-versionx-tasks           = { path = "crates/versionx-tasks",           version = "0.1.0-dev" }
-versionx-multirepo       = { path = "crates/versionx-multirepo",       version = "0.1.0-dev" }
-versionx-git             = { path = "crates/versionx-git",             version = "0.1.0-dev" }
-versionx-github          = { path = "crates/versionx-github",          version = "0.1.0-dev" }
-versionx-events          = { path = "crates/versionx-events",          version = "0.1.0-dev" }
-versionx-sdk             = { path = "crates/versionx-sdk",             version = "0.1.0-dev" }
-versionx-daemon          = { path = "crates/versionx-daemon",          version = "0.1.0-dev" }
-versionx-mcp             = { path = "crates/versionx-mcp",             version = "0.1.0-dev" }
+versionx-core            = { path = "crates/versionx-core",            version = "0.1.0" }
+versionx-adapters        = { path = "crates/versionx-adapters",        version = "0.1.0" }
+versionx-adapter-trait   = { path = "crates/versionx-adapter-trait",   version = "0.1.0" }
+versionx-adapter-node    = { path = "crates/versionx-adapter-node",    version = "0.1.0" }
+versionx-adapter-python  = { path = "crates/versionx-adapter-python",  version = "0.1.0" }
+versionx-adapter-rust    = { path = "crates/versionx-adapter-rust",    version = "0.1.0" }
+versionx-workspace       = { path = "crates/versionx-workspace",       version = "0.1.0" }
+versionx-runtime-trait   = { path = "crates/versionx-runtime-trait",   version = "0.1.0" }
+versionx-runtime-node    = { path = "crates/versionx-runtime-node",    version = "0.1.0" }
+versionx-runtime-python  = { path = "crates/versionx-runtime-python",  version = "0.1.0" }
+versionx-runtime-rust    = { path = "crates/versionx-runtime-rust",    version = "0.1.0" }
+versionx-shim            = { path = "crates/versionx-shim",            version = "0.1.0" }
+versionx-config          = { path = "crates/versionx-config",          version = "0.1.0" }
+versionx-lockfile        = { path = "crates/versionx-lockfile",        version = "0.1.0" }
+versionx-state           = { path = "crates/versionx-state",           version = "0.1.0" }
+versionx-policy          = { path = "crates/versionx-policy",          version = "0.1.0" }
+versionx-release         = { path = "crates/versionx-release",         version = "0.1.0" }
+versionx-tasks           = { path = "crates/versionx-tasks",           version = "0.1.0" }
+versionx-multirepo       = { path = "crates/versionx-multirepo",       version = "0.1.0" }
+versionx-git             = { path = "crates/versionx-git",             version = "0.1.0" }
+versionx-github          = { path = "crates/versionx-github",          version = "0.1.0" }
+versionx-events          = { path = "crates/versionx-events",          version = "0.1.0" }
+versionx-sdk             = { path = "crates/versionx-sdk",             version = "0.1.0" }
+versionx-daemon          = { path = "crates/versionx-daemon",          version = "0.1.0" }
+versionx-mcp             = { path = "crates/versionx-mcp",             version = "0.1.0" }
 
 
 # Async runtime

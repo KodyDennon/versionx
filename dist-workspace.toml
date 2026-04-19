@@ -23,15 +23,21 @@ allow-dirty = ["msi", "ci"]
 installers = ["shell", "powershell", "homebrew", "npm", "msi"]
 
 # Target platforms we ship binaries for. Every release produces one archive per target.
+#
+# Dropped for 0.1.0:
+#   - musl targets: mlua-sys (Luau) needs a musl-targeted g++ cross-compiler
+#     that isn't on the GitHub runner. Linux users install the GNU binaries
+#     instead (covers ~99% of distros; Alpine users rebuild from source).
+#   - aarch64-pc-windows-msvc: ring's C build breaks under cargo-xwin
+#     cross-compilation (clang receives `/imsvc <path>` split into two args).
+#     Windows ARM is <1% of Windows installs today; revisit when the
+#     ring/xwin upstream fix lands.
 targets = [
     "x86_64-unknown-linux-gnu",
     "aarch64-unknown-linux-gnu",
-    "x86_64-unknown-linux-musl",
-    "aarch64-unknown-linux-musl",
     "x86_64-apple-darwin",
     "aarch64-apple-darwin",
     "x86_64-pc-windows-msvc",
-    "aarch64-pc-windows-msvc",
 ]
 
 # Which specific binaries from the workspace to ship. `versionx` is the user-facing CLI;

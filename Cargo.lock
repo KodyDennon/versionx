@@ -4974,7 +4974,7 @@ checksum = "0b928f33d975fc6ad9f86c8f283853ad26bdd5b10b7f1542aa2fa15e2289105a"
 
 [[package]]
 name = "versionx-adapter-node"
-version = "0.1.0-dev"
+version = "0.1.0"
 dependencies = [
  "assert_cmd",
  "async-trait",
@@ -4995,7 +4995,7 @@ dependencies = [
 
 [[package]]
 name = "versionx-adapter-python"
-version = "0.1.0-dev"
+version = "0.1.0"
 dependencies = [
  "async-trait",
  "blake3",
@@ -5014,7 +5014,7 @@ dependencies = [
 
 [[package]]
 name = "versionx-adapter-rust"
-version = "0.1.0-dev"
+version = "0.1.0"
 dependencies = [
  "async-trait",
  "blake3",
@@ -5033,7 +5033,7 @@ dependencies = [
 
 [[package]]
 name = "versionx-adapter-trait"
-version = "0.1.0-dev"
+version = "0.1.0"
 dependencies = [
  "async-trait",
  "camino",
@@ -5045,7 +5045,7 @@ dependencies = [
 
 [[package]]
 name = "versionx-adapters"
-version = "0.1.0-dev"
+version = "0.1.0"
 dependencies = [
  "versionx-adapter-node",
  "versionx-adapter-python",
@@ -5055,7 +5055,7 @@ dependencies = [
 
 [[package]]
 name = "versionx-cli"
-version = "0.1.0-dev"
+version = "0.1.0"
 dependencies = [
  "anyhow",
  "assert_cmd",
@@ -5086,7 +5086,7 @@ dependencies = [
 
 [[package]]
 name = "versionx-config"
-version = "0.1.0-dev"
+version = "0.1.0"
 dependencies = [
  "camino",
  "directories",
@@ -5105,7 +5105,7 @@ dependencies = [
 
 [[package]]
 name = "versionx-core"
-version = "0.1.0-dev"
+version = "0.1.0"
 dependencies = [
  "async-trait",
  "blake3",
@@ -5143,7 +5143,7 @@ dependencies = [
 
 [[package]]
 name = "versionx-daemon"
-version = "0.1.0-dev"
+version = "0.1.0"
 dependencies = [
  "anyhow",
  "bytes",
@@ -5172,7 +5172,7 @@ dependencies = [
 
 [[package]]
 name = "versionx-events"
-version = "0.1.0-dev"
+version = "0.1.0"
 dependencies = [
  "chrono",
  "serde",
@@ -5185,7 +5185,7 @@ dependencies = [
 
 [[package]]
 name = "versionx-git"
-version = "0.1.0-dev"
+version = "0.1.0"
 dependencies = [
  "async-trait",
  "camino",
@@ -5203,7 +5203,7 @@ dependencies = [
 
 [[package]]
 name = "versionx-github"
-version = "0.1.0-dev"
+version = "0.1.0"
 dependencies = [
  "async-trait",
  "chrono",
@@ -5219,7 +5219,7 @@ dependencies = [
 
 [[package]]
 name = "versionx-lockfile"
-version = "0.1.0-dev"
+version = "0.1.0"
 dependencies = [
  "blake3",
  "camino",
@@ -5238,7 +5238,7 @@ dependencies = [
 
 [[package]]
 name = "versionx-mcp"
-version = "0.1.0-dev"
+version = "0.1.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -5268,7 +5268,7 @@ dependencies = [
 
 [[package]]
 name = "versionx-multirepo"
-version = "0.1.0-dev"
+version = "0.1.0"
 dependencies = [
  "async-trait",
  "camino",
@@ -5294,7 +5294,7 @@ dependencies = [
 
 [[package]]
 name = "versionx-policy"
-version = "0.1.0-dev"
+version = "0.1.0"
 dependencies = [
  "blake3",
  "camino",
@@ -5320,7 +5320,7 @@ dependencies = [
 
 [[package]]
 name = "versionx-release"
-version = "0.1.0-dev"
+version = "0.1.0"
 dependencies = [
  "async-trait",
  "blake3",
@@ -5350,7 +5350,7 @@ dependencies = [
 
 [[package]]
 name = "versionx-runtime-node"
-version = "0.1.0-dev"
+version = "0.1.0"
 dependencies = [
  "async-trait",
  "camino",
@@ -5371,7 +5371,7 @@ dependencies = [
 
 [[package]]
 name = "versionx-runtime-python"
-version = "0.1.0-dev"
+version = "0.1.0"
 dependencies = [
  "async-trait",
  "camino",
@@ -5392,7 +5392,7 @@ dependencies = [
 
 [[package]]
 name = "versionx-runtime-rust"
-version = "0.1.0-dev"
+version = "0.1.0"
 dependencies = [
  "async-trait",
  "camino",
@@ -5411,7 +5411,7 @@ dependencies = [
 
 [[package]]
 name = "versionx-runtime-trait"
-version = "0.1.0-dev"
+version = "0.1.0"
 dependencies = [
  "async-trait",
  "camino",
@@ -5434,7 +5434,7 @@ dependencies = [
 
 [[package]]
 name = "versionx-sdk"
-version = "0.1.0-dev"
+version = "0.1.0"
 dependencies = [
  "thiserror 2.0.18",
  "tokio",
@@ -5444,7 +5444,7 @@ dependencies = [
 
 [[package]]
 name = "versionx-shim"
-version = "0.1.0-dev"
+version = "0.1.0"
 dependencies = [
  "camino",
  "directories",
@@ -5454,7 +5454,7 @@ dependencies = [
 
 [[package]]
 name = "versionx-state"
-version = "0.1.0-dev"
+version = "0.1.0"
 dependencies = [
  "blake3",
  "camino",
@@ -5473,7 +5473,7 @@ dependencies = [
 
 [[package]]
 name = "versionx-tasks"
-version = "0.1.0-dev"
+version = "0.1.0"
 dependencies = [
  "async-trait",
  "blake3",
@@ -5489,7 +5489,7 @@ dependencies = [
 
 [[package]]
 name = "versionx-tui"
-version = "0.1.0-dev"
+version = "0.1.0"
 dependencies = [
  "anyhow",
  "camino",
@@ -5503,7 +5503,7 @@ dependencies = [
 
 [[package]]
 name = "versionx-web"
-version = "0.1.0-dev"
+version = "0.1.0"
 dependencies = [
  "aide",
  "anyhow",
@@ -5519,7 +5519,7 @@ dependencies = [
 
 [[package]]
 name = "versionx-workspace"
-version = "0.1.0-dev"
+version = "0.1.0"
 dependencies = [
  "blake3",
  "camino",
@@ -6198,7 +6198,7 @@ dependencies = [
 
 [[package]]
 name = "xtask"
-version = "0.1.0-dev"
+version = "0.1.0"
 dependencies = [
  "anyhow",
  "camino",
