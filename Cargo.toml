@@ -71,6 +71,7 @@ versionx-git             = { path = "crates/versionx-git",             version =
 versionx-github          = { path = "crates/versionx-github",          version = "0.1.0-dev" }
 versionx-events          = { path = "crates/versionx-events",          version = "0.1.0-dev" }
 versionx-sdk             = { path = "crates/versionx-sdk",             version = "0.1.0-dev" }
+versionx-daemon          = { path = "crates/versionx-daemon",          version = "0.1.0-dev" }
 
 # Async runtime
 tokio = { version = "1.41", features = ["full"] }
@@ -162,6 +163,11 @@ petgraph = "0.6"
 parking_lot = "0.12"
 dashmap = "6.1"
 once_cell = "1.20"
+
+# Filesystem events (daemon cache invalidation)
+notify = "7.0"
+notify-debouncer-full = "0.4"
+pin-project-lite = "0.2"
 
 # Utility
 indexmap = { version = "2.6", features = ["serde"] }

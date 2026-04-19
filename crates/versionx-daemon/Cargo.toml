@@ -8,7 +8,7 @@ license.workspace = true
 repository.workspace = true
 homepage.workspace = true
 readme.workspace = true
-description = "The `versiond` long-running daemon with JSON-RPC 2.0 over UDS / named pipe."
+description = "The `versiond` long-running daemon + JSON-RPC 2.0 IPC (shared client/server library)."
 
 [package.metadata.wix]
 upgrade-guid = "D07A7BE8-C747-4113-BB18-D94F56BA9AD7"
@@ -19,19 +19,37 @@ eula = false
 [lints]
 workspace = true
 
+[lib]
+name = "versionx_daemon"
+path = "src/lib.rs"
+
 [[bin]]
 name = "versiond"
-path = "src/main.rs"
+path = "src/bin/versiond.rs"
 
 [dependencies]
 clap = { workspace = true }
 tokio = { workspace = true }
+tokio-util = { workspace = true }
+futures = { workspace = true }
 anyhow.workspace = true
+thiserror.workspace = true
 tracing.workspace = true
 tracing-subscriber.workspace = true
 serde = { workspace = true }
 serde_json.workspace = true
-camino.workspace = true
+camino = { workspace = true }
 parking_lot.workspace = true
-versionx-core.workspace = true
+bytes.workspace = true
+uuid.workspace = true
+notify = "7.0"
+notify-debouncer-full = "0.4"
+pin-project-lite = { workspace = true }
+indexmap = { workspace = true }
+versionx-workspace.workspace = true
+versionx-events.workspace = true
+directories.workspace = true
 
+[dev-dependencies]
+tempfile.workspace = true
+pretty_assertions.workspace = true

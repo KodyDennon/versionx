@@ -244,6 +244,15 @@ enum DaemonCommand {
     Stop,
     /// Report daemon status.
     Status,
+    /// Tail the daemon's structured log file.
+    Logs {
+        /// Number of lines to dump before streaming further writes.
+        #[arg(long, default_value_t = 200)]
+        tail: usize,
+        /// Only dump existing lines and exit (don't keep watching the file).
+        #[arg(long)]
+        no_follow: bool,
+    },
 }
 
 #[derive(Subcommand, Debug)]
@@ -338,7 +347,7 @@ fn dispatch(cli: Cli) -> Result<ExitCode> {
         Command::Global(sub) => run_global(sub, cli.output),
         Command::Workspace(sub) => run_workspace(sub, cli.cwd.as_deref(), cli.output),
         Command::Bump => run_bump(cli.cwd.as_deref(), cli.output),
-        Command::Daemon(_) => not_yet("daemon", "0.3.0"),
+        Command::Daemon(sub) => block_on(run_daemon(sub, cli.output)),
         Command::Tui => run_tui(cli.cwd.as_deref()),
         Command::Release(_) => not_yet("release", "0.4.0"),
         Command::Policy(_) => not_yet("policy", "0.5.0"),
@@ -822,6 +831,150 @@ fn run_bump(cwd: Option<&camino::Utf8Path>, output: OutputFormat) -> Result<Exit
         }
     }
     Ok(ExitCode::from(0))
+}
+
+async fn run_daemon(sub: DaemonCommand, output: OutputFormat) -> Result<ExitCode> {
+    use versionx_daemon::{Client, DaemonPaths, client::is_running};
+    let paths = DaemonPaths::from_env().context("resolving VERSIONX_HOME")?;
+
+    match sub {
+        DaemonCommand::Start { foreground } => {
+            if is_running(&paths).await {
+                emit_msg(output, "daemon already running", serde_json::json!({"running": true}))?;
+                return Ok(ExitCode::from(0));
+            }
+            // Locate the versiond binary the same way we locate
+            // versionx-tui — prefer a sibling of the current exe.
+            let versiond = sibling_binary("versiond")?;
+            let mut cmd = std::process::Command::new(versiond);
+            if !foreground {
+                cmd.arg("--detach");
+            }
+            let status = cmd.status().context("spawning versiond")?;
+            Ok(ExitCode::from(status.code().unwrap_or(1) as u8))
+        }
+        DaemonCommand::Stop => {
+            if let Ok(client) = Client::connect(&paths).await {
+                client.shutdown().await.context("sending shutdown")?;
+                emit_msg(output, "daemon shutting down", serde_json::json!({"shutdown": true}))?;
+            } else {
+                emit_msg(output, "daemon not running", serde_json::json!({"running": false}))?;
+            }
+            Ok(ExitCode::from(0))
+        }
+        DaemonCommand::Status => {
+            if !is_running(&paths).await {
+                emit_msg(output, "daemon not running", serde_json::json!({"running": false}))?;
+                return Ok(ExitCode::from(1));
+            }
+            let client = Client::connect(&paths).await.context("connecting to daemon")?;
+            let info = client.server_info().await.context("fetching server info")?;
+            match output {
+                OutputFormat::Json | OutputFormat::Ndjson => {
+                    let payload = serde_json::json!({
+                        "running": true,
+                        "pid": info.pid,
+                        "uptime_seconds": info.uptime_seconds,
+                        "version": info.version,
+                        "socket": paths.socket.to_string(),
+                    });
+                    let mut stdout = io::stdout().lock();
+                    serde_json::to_writer(&mut stdout, &payload)?;
+                    stdout.write_all(b"\n")?;
+                }
+                OutputFormat::Human => {
+                    println!("daemon running");
+                    println!("  pid:     {}", info.pid);
+                    println!("  uptime:  {}s", info.uptime_seconds);
+                    println!("  version: {}", info.version);
+                    println!("  socket:  {}", paths.socket);
+                }
+            }
+            Ok(ExitCode::from(0))
+        }
+        DaemonCommand::Logs { tail, no_follow } => {
+            tail_log(&paths.log_file, tail, !no_follow).await?;
+            Ok(ExitCode::from(0))
+        }
+    }
+}
+
+/// Find a sibling binary next to the current executable. Falls back to
+/// PATH lookup if not colocated (e.g. in `/usr/local/bin`).
+fn sibling_binary(name: &str) -> Result<std::path::PathBuf> {
+    let exe = std::env::current_exe().context("locating current exe")?;
+    let sibling = exe
+        .parent()
+        .map(|p| p.join(if cfg!(windows) { format!("{name}.exe") } else { name.into() }));
+    if let Some(p) = sibling
+        && p.exists()
+    {
+        return Ok(p);
+    }
+    which::which(name).with_context(|| format!("cannot find `{name}` on PATH"))
+}
+
+fn emit_msg(output: OutputFormat, human: &str, json_payload: serde_json::Value) -> Result<()> {
+    match output {
+        OutputFormat::Json | OutputFormat::Ndjson => {
+            let mut stdout = io::stdout().lock();
+            serde_json::to_writer(&mut stdout, &json_payload)?;
+            stdout.write_all(b"\n")?;
+        }
+        OutputFormat::Human => {
+            println!("{human}");
+        }
+    }
+    Ok(())
+}
+
+async fn tail_log(path: &camino::Utf8Path, tail: usize, follow: bool) -> Result<()> {
+    use tokio::io::{AsyncBufReadExt, AsyncSeekExt, BufReader};
+
+    if !path.exists() {
+        eprintln!("no log file at {path} — has the daemon ever run?");
+        return Ok(());
+    }
+
+    // Read the last `tail` lines by slurping the whole file — it's capped
+    // at a few MiB for typical daemon runs, and we avoid reverse-seek
+    // complexity.
+    let contents = tokio::fs::read_to_string(path.as_std_path()).await?;
+    let lines: Vec<&str> = contents.lines().collect();
+    let start = lines.len().saturating_sub(tail);
+    for line in &lines[start..] {
+        println!("{line}");
+    }
+
+    if !follow {
+        return Ok(());
+    }
+
+    // Simple poll-tail: re-open the file periodically from our current
+    // offset and dump any new bytes. Good enough for 0.3 — users who need
+    // fancier tailing can `tail -f` directly.
+    let mut offset = tokio::fs::metadata(path.as_std_path()).await?.len();
+    let mut interval = tokio::time::interval(std::time::Duration::from_millis(250));
+    loop {
+        interval.tick().await;
+        let meta = tokio::fs::metadata(path.as_std_path()).await?;
+        let len = meta.len();
+        if len < offset {
+            // File got truncated/rotated — start over from the top.
+            offset = 0;
+        }
+        if len == offset {
+            continue;
+        }
+        let mut file = tokio::fs::File::open(path.as_std_path()).await?;
+        file.seek(std::io::SeekFrom::Start(offset)).await?;
+        let reader = BufReader::new(file);
+        let mut lines = reader.lines();
+        while let Some(line) = lines.next_line().await? {
+            println!("{line}");
+        }
+        offset = len;
+    }
 }
 
 fn run_tui(cwd: Option<&camino::Utf8Path>) -> Result<ExitCode> {
