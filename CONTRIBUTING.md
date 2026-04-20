@@ -61,6 +61,17 @@ entry to `strategy = "commits"`. `vx migrate` handles this.
 
 By contributing you agree your changes are licensed under Apache-2.0 (the project license). No CLA required; see the `LICENSE-APACHE` file.
 
+## Documentation
+
+Two surfaces:
+
+- **[`docs/spec/`](docs/spec/)** — internal design / RFC territory. Plain Markdown, authoritative for **why**.
+- **[`website/`](website/)** — the user-facing documentation site at [kodydennon.github.io/versionx](https://kodydennon.github.io/versionx/). Authoritative for **how**.
+
+Most Reference pages are auto-generated. Run `cargo xtask docs` after changing a clap flag, a config key, an error variant, an MCP tool, or a JSON-RPC method; CI fails on drift.
+
+Full docs-pipeline guide: [Working on the docs](https://kodydennon.github.io/versionx/contributing/documentation) on the site.
+
 ## Questions
 
 Open a GitHub Discussion. Bug reports: open an issue.

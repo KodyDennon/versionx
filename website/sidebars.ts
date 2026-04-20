@@ -117,6 +117,7 @@ const sidebars: SidebarsConfig = {
         'contributing/debugging-and-tracing',
         'contributing/release-engineering',
         'contributing/rfcs-and-design-docs',
+        'contributing/documentation',
       ],
     },
     'roadmap',
