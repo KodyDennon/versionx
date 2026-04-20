@@ -86,6 +86,7 @@ const sidebars: SidebarsConfig = {
           ],
         },
         'integrations/json-rpc-daemon',
+        'integrations/json-rpc-methods',
         'integrations/http-api',
         'integrations/github-actions',
       ],
