@@ -1,0 +1,31 @@
+# Broken-link checker config for the Versionx docs site.
+# Runs in CI over the built site (website/build) — see .github/workflows/docs.yml.
+
+# Don't treat these as fatal — they're known brittle or external rate-limited.
+accept = [
+  200, 201, 202, 203, 204,
+  206,
+  # GitHub sometimes returns 403/429 on unauthenticated anonymous probes
+  403, 429,
+]
+
+# Skip checking links to these hosts. Add only after deliberate review.
+exclude = [
+  # External domains that regularly rate-limit automated scanners
+  "^https://crates\\.io/",
+  "^https://docs\\.rs/",
+  "^https://stackoverflow\\.com/",
+  "^https://nodejs\\.org/",
+  # localhost references in examples
+  "^http://localhost",
+  "^http://127\\.0\\.0\\.1",
+]
+
+# Internal anchors can drift; accept them but warn.
+include_fragments = false
+
+# Keep the check strict on actual broken references.
+no_progress = true
+max_concurrency = 12
+max_retries = 2
+timeout = 20

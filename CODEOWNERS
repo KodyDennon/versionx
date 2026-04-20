@@ -1,0 +1,13 @@
+# CODEOWNERS — triggers review requests on matching paths.
+
+# Everything defaults to the project lead until we grow.
+*                       @KodyDennon
+
+# Documentation site and generators
+/website/               @KodyDennon
+/xtask/src/docs/        @KodyDennon
+/.github/workflows/docs.yml @KodyDennon
+/lychee.toml            @KodyDennon
+
+# Internal design docs
+/docs/spec/             @KodyDennon

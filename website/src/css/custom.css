@@ -1,0 +1,73 @@
+/**
+ * Versionx Docusaurus theme. Infima overrides.
+ *
+ * Palette: deep slate with a burnt-amber accent. Dark-first.
+ */
+
+:root {
+  --ifm-color-primary: #d97706;
+  --ifm-color-primary-dark: #c26a05;
+  --ifm-color-primary-darker: #b76405;
+  --ifm-color-primary-darkest: #975304;
+  --ifm-color-primary-light: #e58013;
+  --ifm-color-primary-lighter: #e98b25;
+  --ifm-color-primary-lightest: #eda148;
+
+  --ifm-heading-font-weight: 700;
+  --ifm-font-family-base: 'Inter', ui-sans-serif, system-ui, -apple-system,
+    'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  --ifm-font-family-monospace: 'JetBrains Mono', ui-monospace, SFMono-Regular,
+    Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace;
+
+  --ifm-code-font-size: 0.92em;
+  --ifm-pre-padding: 1.1rem;
+  --ifm-spacing-horizontal: 1.05rem;
+
+  --docusaurus-highlighted-code-line-bg: rgba(0, 0, 0, 0.08);
+}
+
+[data-theme='dark'] {
+  --ifm-color-primary: #f59e0b;
+  --ifm-color-primary-dark: #e38f08;
+  --ifm-color-primary-darker: #d78707;
+  --ifm-color-primary-darkest: #b06f06;
+  --ifm-color-primary-light: #f6aa2a;
+  --ifm-color-primary-lighter: #f7b13a;
+  --ifm-color-primary-lightest: #fac36a;
+
+  --ifm-background-color: #0b0f14;
+  --ifm-background-surface-color: #0f1419;
+  --docusaurus-highlighted-code-line-bg: rgba(255, 255, 255, 0.05);
+}
+
+/* Nudge readable line length on docs pages. */
+.theme-doc-markdown {
+  max-width: 860px;
+}
+
+/* Tighten callouts a touch. */
+.admonition {
+  font-size: 0.96em;
+}
+
+/* Ensure mermaid diagrams inherit the dark background cleanly. */
+[data-theme='dark'] .docusaurus-mermaid-container {
+  background: var(--ifm-background-surface-color);
+  border-radius: 8px;
+  padding: 0.5rem;
+}
+
+/* Keep the navbar flat against the background in dark mode. */
+[data-theme='dark'] .navbar {
+  box-shadow: inset 0 -1px 0 rgba(255, 255, 255, 0.06);
+}
+
+/* Keep tables readable in Reference pages. */
+table {
+  display: table;
+  width: 100%;
+}
+table th,
+table td {
+  padding: 0.45rem 0.7rem;
+}

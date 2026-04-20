@@ -8,6 +8,8 @@
 use anyhow::Result;
 use clap::{Parser, Subcommand};
 
+mod docs;
+
 #[derive(Parser, Debug)]
 #[command(name = "xtask", about = "Internal repo tasks for Versionx")]
 struct Cli {
@@ -21,6 +23,8 @@ enum Cmd {
     Ci,
     /// Print the crate list in workspace member order.
     Crates,
+    /// Regenerate every auto-generated docs page in `website/docs/`.
+    Docs(docs::DocsArgs),
 }
 
 fn main() -> Result<()> {
@@ -40,5 +44,6 @@ fn main() -> Result<()> {
             }
             Ok(())
         }
+        Cmd::Docs(args) => docs::run(args),
     }
 }

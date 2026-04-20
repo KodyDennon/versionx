@@ -20,3 +20,4 @@ anyhow.workspace = true
 clap = { workspace = true }
 camino.workspace = true
 duct.workspace = true
+chrono.workspace = true
