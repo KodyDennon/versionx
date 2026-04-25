@@ -13,18 +13,17 @@
 ## Install
 
 ```bash
-# macOS / Linux
-curl --proto '=https' --tlsv1.2 -LsSf \
-  https://github.com/KodyDennon/versionx/releases/latest/download/versionx-cli-installer.sh | sh
+# Alpha testers: download the newest prerelease for your platform:
+#   https://github.com/KodyDennon/versionx/releases
 
-# Windows (PowerShell)
-powershell -ExecutionPolicy ByPass -c "irm https://github.com/KodyDennon/versionx/releases/latest/download/versionx-cli-installer.ps1 | iex"
-
-# Cargo
-cargo install versionx-cli
+# Or build from a cloned checkout
+git clone https://github.com/KodyDennon/versionx
+cd versionx
+cargo install --path crates/versionx-cli
 ```
 
-Homebrew, Scoop, npm, and PyPI shim packages — see [the full install guide](https://kodydennon.github.io/versionx/get-started/install).
+GitHub Releases are the real public install surface today. Homebrew, Scoop, npm,
+and PyPI channels are planned after the alpha hardening pass.
 
 Wire the shell hook once:
 
@@ -40,43 +39,45 @@ versionx                        # bare run — auto-detects workspace + suggests
 
 ```console
 $ versionx
-Versionx 0.7.0
+versionx 0.1.0 · ./my-app
+  git✓ · config✗ · lock✗ · daemon✗ · 3 components discovered
 
-Workspace  ./my-app    (node 22.11.0, python 3.13.1, rust 1.95)
-Outdated   3 packages in apps/web  (axios ^1.6 → ^1.7)
-Policy     clean
-Ready      release plan   (last release 12d ago)
-
-What next?
-  versionx status                show ecosystem + release health
-  versionx update --plan         preview dependency bumps
-  versionx release plan          propose the next release
+  → run `versionx init` to synthesize a versionx.toml for this workspace.
+  → run `versionx daemon start` (or `versionx install-shell-hook`) for warm caching.
 ```
 
-Every mutating command produces a plan you can inspect:
+Current alpha workflow:
 
 ```console
-$ versionx update --plan > plan.json
-$ versionx apply plan.json
+$ versionx init
+$ versionx sync
+$ versionx release plan
+$ versionx release approve <plan-id>
+$ versionx release apply <plan-id>
 ```
 
-The same plan/apply contract covers dependency updates, release bumps, toolchain installs, and policy changes — for humans and AI agents alike.
+The release planner, workspace discovery, runtime install path, and MCP server are
+real today. Dependency-update planning and broader automation surfaces are still
+landing.
 
 ---
 
 ## What's in the box
 
-- **Runtime & toolchain management** — mise/asdf replacement with native-speed shims.
-- **Polyglot dependency handling** — unified status / update / audit across npm, pip, cargo, bundler, maven, gradle.
-- **Release orchestration** — SemVer, CalVer, PR-title parsing, changesets. Multi-ecosystem. Multi-repo. Plan / approve / apply / rollback.
-- **Policy engine** — declarative TOML + sandboxed Luau. Waivers with mandatory expiry.
-- **AI as a client, not a component** — first-class MCP server. BYO API key. No bundled LLM.
+- **Workspace discovery** — Node, Python, Rust, and mixed workspaces are detected with no config.
+- **Runtime management** — install, pin, and list core runtimes with native shims + shell hook support.
+- **Release planning** — propose, approve, apply, rollback, snapshot, and prerelease flows are available in the CLI alpha.
+- **Policy engine** — starter policies, checks, lockfile verification, and expiring waivers are implemented.
+- **AI as a client** — MCP server with a compact tool surface and no bundled model.
 
 ---
 
 ## Status
 
-**0.7 feature-complete.** 30 crates, 280+ tests. Workspace discovery, content-hash bump planner, release engine with rollback, policy engine, MCP server, versiond JSON-RPC daemon, TUI dashboard, cross-repo saga protocol.
+**0.1 alpha, publicly testable.** The foundation is real: workspace discovery,
+runtime install path, release planning, policy checks, daemon, and MCP server.
+The roadmap from here is hardening the alpha surface and filling the missing
+automation/features before a broader 1.0 push.
 
 Road to 1.0: hardening, Windows parity, ecosystem breadth. See the [roadmap](https://kodydennon.github.io/versionx/roadmap).
 

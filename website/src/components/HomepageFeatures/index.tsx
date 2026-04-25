@@ -25,9 +25,9 @@ const FEATURES: Feature[] = [
     href: '/guides/polyglot-dependency-updates',
     body: (
       <>
-        Unified <code>status</code>, <code>update</code>, and <code>audit</code>{' '}
-        across npm, pip, cargo, go, bundler, maven. We drive the real resolvers —
-        we don&apos;t reimplement them.
+        Unified <code>status</code> and <code>update</code> across npm, pip, and
+        cargo in the current alpha. We drive the real resolvers — we don&apos;t
+        reimplement them.
       </>
     ),
   },

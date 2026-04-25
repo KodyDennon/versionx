@@ -6,15 +6,16 @@ sidebar_position: 8
 
 # Release engineering
 
-Versionx releases itself with Versionx. Pragmatic dogfooding.
+Versionx currently releases itself primarily through `cargo-dist` and GitHub
+Actions. The long-term dogfooding path is still part of the roadmap.
 
 ## The release pipeline
 
 1. PRs merge to `main` via squash with Conventional-Commit-style titles.
-2. On every merge, `.github/workflows/release.yml` runs `versionx release plan`.
-3. If a release is due, a release PR opens (or a direct release cuts — we alternate depending on the change shape).
-4. On release PR merge, the release applies, tags push, and `dist` builds the artifacts.
-5. Artifacts publish to GitHub Releases, Homebrew tap, Scoop bucket, and crates.io.
+2. `.github/workflows/release.yml` runs the `cargo-dist` release flow.
+3. Tag pushes and main-branch prerelease snapshots build platform artifacts.
+4. GitHub Releases receive the generated archives/installers.
+5. Additional package channels remain roadmap work until they are verified end to end.
 
 ## `dist-workspace.toml`
 
@@ -23,8 +24,7 @@ The workspace is packaged via `cargo-dist` (config in `dist-workspace.toml` at t
 - Platform matrix builds.
 - Archive naming.
 - Installer generation (curl-shell, PowerShell).
-- npm and PyPI shim packages.
-- Homebrew formula and Scoop manifest updates.
+- Future package-manager distribution work once those channels are live.
 
 Tweaks happen in `dist-workspace.toml`; don't add ad-hoc scripts to the workflow.
 
@@ -56,10 +56,8 @@ CI gate: after `cargo xtask docs`, `git diff --exit-code -- website/` must pass.
 ## Publishing
 
 - **GitHub Releases.** `cargo-dist` produces the archives and installers and attaches them.
-- **Homebrew.** Formula lives in `KodyDennon/homebrew-versionx`; `dist` pushes an update on each tag.
-- **Scoop.** Bucket lives in `KodyDennon/scoop-versionx`; same flow.
 - **crates.io.** `versionx-sdk`, `versionx-adapter-trait`, `versionx-runtime-trait`, `versionx-config`, `versionx-events`, `versionx-adapter-*`, `versionx-runtime-*` publish. The `versionx-cli` binary is also published for `cargo install versionx-cli`.
-- **npm / PyPI.** Shim packages publish with each release via `dist`.
+- **Homebrew / Scoop / npm / PyPI.** Planned, but do not describe them as live until the public release flow is verified.
 
 ## Versioning
 
@@ -69,14 +67,6 @@ CI gate: after `cargo xtask docs`, `git diff --exit-code -- website/` must pass.
 ## Tagging
 
 Tag shape: `v<X>.<Y>.<Z>` for the overall tool; `<crate>-v<X>.<Y>.<Z>` for individual crate releases. `cargo-dist` creates all tags.
-
-## Pre-release channels
-
-```bash
-versionx release pre-enter next
-```
-
-Releases tag as `v0.8.0-next.1`, `v0.8.0-next.2`. `pre-exit` rolls up to a stable bump.
 
 ## See also
 

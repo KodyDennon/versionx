@@ -17,7 +17,7 @@ You'll learn:
 ## The fast path
 
 ```bash
-versionx migrate mise
+versionx import --from mise
 ```
 
 Versionx reads `.mise.toml`, `mise.toml`, or `.tool-versions` in the current directory and writes a `versionx.toml` that expresses the same pins. Inspect the output; it's meant to be readable.
@@ -57,7 +57,7 @@ Once everything resolves through Versionx, remove the mise activation line from 
 ## What changes
 
 - **Shell hook is Versionx's, not mise's.** `versionx install-shell-hook` replaces `mise activate`.
-- **`versionx current` replaces `mise current`.** Same information, slightly richer output.
+- **`versionx status` replaces most `mise current` usage.**
 - **`versionx install` replaces `mise install`.** Package manager versions (pnpm, yarn, uv) are pinned directly instead of through corepack.
 - **No `.tool-versions` anymore.** Everything lives in `versionx.toml`. If you have a strong preference for `.tool-versions`, Versionx continues to read it — you don't have to migrate the file, just configure Versionx to use it.
 
@@ -66,7 +66,7 @@ Once everything resolves through Versionx, remove the mise activation line from 
 - Package managers (pnpm, yarn, uv) are first-class pinnable runtimes, not hacks via corepack.
 - `versionx.toml` holds toolchain pins, dependency rules, policy rules, and release config — one file, one surface.
 - Cross-repo awareness via the state DB. Mise is per-repo only.
-- Plan/apply for toolchain installs. `versionx install --plan` shows exactly what would change.
+- An alpha path that keeps runtime pins, release planning, and agent integration in one tool.
 
 ## What doesn't carry over (yet)
 

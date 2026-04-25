@@ -1,6 +1,6 @@
 ---
 title: Your first release
-description: Walk through a complete release end-to-end in a single repo — init, commit, plan, apply, tag, publish.
+description: Walk through the current single-repo release flow in the Versionx alpha.
 sidebar_position: 3
 ---
 
@@ -76,31 +76,28 @@ versionx release plan
 You'll see a plan like:
 
 ```text
-Release plan (strategy: pr-title)
-
-my-app       0.1.0  →  0.2.0   (minor)
-
-Changelog:
-  Added
-    - api: add /status endpoint
-
-Prerequisites
-  HEAD:   abc1234
-  lock:   blake3:9f1e...
-  ttl:    300s
+plan_id: blake3:25115a4550714143356805ed1d418d842bceae6331dba8b47645e46faffee855
+strategy: conventional
+approved: false
+expires_at: 2026-04-26 03:42:03 UTC
+saved_to: .versionx/plans/25115a4550714143356805ed1d418d842bceae6331dba8b47645e46faffee855.toml
+proposed bumps (1):
+  my-app                           0.1.0 -> 0.2.0     [minor]
 ```
 
-To inspect the full JSON:
+The current alpha persists release plans to `.versionx/plans/` and identifies
+them by `plan_id`.
+
+## 4. Approve
 
 ```bash
-versionx release plan --output json > release.json
-cat release.json
+versionx release approve <plan-id>
 ```
 
-## 4. Apply
+## 5. Apply
 
 ```bash
-versionx release apply release.json
+versionx release apply <plan-id>
 ```
 
 What happens, atomically:
@@ -114,7 +111,7 @@ What happens, atomically:
 
 Prerequisites are checked before any mutation: if HEAD has moved or the lockfile hash doesn't match what the plan was generated against, apply fails with a clear error. Nothing is half-applied.
 
-## 5. Push
+## 6. Push
 
 ```bash
 git push --follow-tags
@@ -122,7 +119,7 @@ git push --follow-tags
 
 Your CI picks up the new tag and runs whatever publish workflow you have wired. Versionx itself does not publish to registries; that's your CI's job. See [GitHub Actions recipes](/guides/github-actions-recipes) for common shapes.
 
-## 6. Verify
+## 7. Verify
 
 ```bash
 versionx status
@@ -139,17 +136,19 @@ Done. You've cut a release end to end.
 
 ## What about rollback?
 
-If something's wrong after apply but before push:
+If something's wrong after apply but before push, use the same `plan_id`:
 
 ```bash
-versionx release rollback
+versionx release rollback <plan-id>
 ```
 
 Reverts the release commit, deletes the tag, and restores the previous lockfile. Only works if you haven't pushed yet. After push, use a normal git revert workflow.
 
 ## What about cross-repo?
 
-If `my-app` is one of several repos you release together, switch the workspace config to a multi-repo shape and use `versionx release plan --scope fleet`. See [Multi-repo & monorepos](/guides/multi-repo-and-monorepos).
+Fleet release orchestration exists in the codebase, but the outside-user alpha
+story is still centered on single-repo workflows first. Treat multi-repo release
+guides as advanced/experimental until the hardening pass lands.
 
 ## See also
 

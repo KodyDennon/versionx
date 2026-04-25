@@ -28,21 +28,28 @@ If you specifically want the release-PR workflow, Versionx supports it via `stra
 |---|---|
 | `.release-please-config.json` → `packages` | `versionx.toml` → `[workspace]` + package manifests |
 | `release-type` (`node`, `rust`, `python`) | Auto-detected per ecosystem |
-| `bump-minor-pre-major` | `[release] pre-major = "minor"` |
-| `bump-patch-for-minor-pre-major` | `[release] pre-major-minor-bumps = "patch"` |
-| `include-component-in-tag` | `[release] tag-component = true` |
-| `extra-files` | `[release.extra-files]` |
-| `changelog-path` | `[release] changelog-path` |
-| `changelog-type` | `[release] changelog-format` |
+| `include-component-in-tag` | `[release] tag_template = "{package}-v{version}"` |
+| `changelog-path` | `[release] changelog` |
+| `packages` | Warning today; manual follow-up may still be needed |
+| `bump-minor-pre-major` / `bump-patch-for-minor-pre-major` / `extra-files` / `changelog-type` | Warning today; manual review |
 | `.release-please-manifest.json` | Not needed — state lives in git tags + state DB |
 
-## The fast path
+## Current alpha status
+
+There is now a real helper:
 
 ```bash
-versionx migrate release-please
+versionx migrate --from release-please
 ```
 
-Reads `.release-please-config.json` and writes `versionx.toml`. Inspect.
+The current alpha migrates the release settings it can represent today:
+
+- `[release].strategy = "pr-title"`
+- `changelog-path` when it can determine one
+- `include-component-in-tag` as `tag_template = "{package}-v{version}"`
+
+It also prints warnings for release-please settings that still need manual
+translation.
 
 ## CI cutover
 
@@ -54,19 +61,12 @@ Old GitHub Actions step:
     release-type: node
 ```
 
-New step:
-
-```yaml
-- uses: KodyDennon/versionx-release-action@v1
-  with:
-    strategy: pr-title
-```
-
-The action is just a thin wrapper around `versionx release plan` + `versionx release apply`. See [GitHub Actions recipes](/guides/github-actions-recipes) for the full workflow including the release-PR pattern.
+New step: install Versionx in CI, then run the CLI directly. See
+[GitHub Actions recipes](/guides/github-actions-recipes) for the current plain-shell pattern.
 
 ## What changes
 
-- **No release PR by default.** Merges happen; the next `versionx release plan` cuts a release. If you prefer a release PR, opt into it with a 15-line workflow — the release action supports `mode: release-pr`.
+- **Migration is partial, not magical.** The helper gets the obvious release settings into `versionx.toml`, then prints the remaining manual follow-up.
 - **No manifest file to check into the repo.** State DB plus git tags is the source of truth.
 - **Commit messages are less strict.** release-please requires Conventional Commits on every commit. Versionx (with `pr-title` default) only requires Conventional-style PR titles since squash-merge is the norm. If you squash-merge already, this matches what you do. If you don't, switch to the `commits` strategy instead for full-history parsing.
 
@@ -79,11 +79,11 @@ The action is just a thin wrapper around `versionx release plan` + `versionx rel
 
 ## What doesn't translate cleanly
 
-- **Automatic maintenance of the release PR.** If you relied on release-please for this, set `mode: release-pr` on the Versionx action; it maintains the same PR shape. If that's a deal-breaker, release-please and Versionx can coexist — Versionx still drives runtimes and deps; release-please still drives releases — there's no collision.
+- **Automatic maintenance of the release PR.** If that behavior is critical today, keep release-please for that slice while you evaluate the rest of Versionx.
 
 ## Troubleshooting
 
-- **Release plan shows no bumps after a merge.** Check the PR title actually matched Conventional Commit format. Run `versionx release plan --explain` for the step-by-step decision trace.
+- **Release plan shows no bumps after a merge.** Check the PR title actually matched Conventional Commit format and that the repo has the config/lockfile state Versionx expects.
 - **Two release PRs fighting.** Disable release-please's workflow before enabling Versionx's release-PR mode.
 
 ## See also

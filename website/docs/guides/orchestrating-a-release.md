@@ -55,12 +55,16 @@ versionx release plan --output json
 
 ### 2. Approve
 
-Versionx has no separate "approve" step — you approve by applying. If you want a human-review gate in CI, save the plan to a file, open a PR with it, merge when approved, then apply from the merged commit.
+The current alpha has an explicit approval step:
+
+```bash
+versionx release approve <plan-id>
+```
 
 ### 3. Apply
 
 ```bash
-versionx release apply <plan.json>
+versionx release apply <plan-id>
 ```
 
 Atomic:
@@ -76,7 +80,7 @@ Prerequisites are re-checked before any mutation. If HEAD moved or the lockfile 
 ### 4. Rollback (before push)
 
 ```bash
-versionx release rollback
+versionx release rollback <plan-id>
 ```
 
 Reverts the release commit, deletes the tag, restores the previous lockfile. Only works pre-push. Post-push, use a normal git revert.
@@ -84,27 +88,18 @@ Reverts the release commit, deletes the tag, restores the previous lockfile. Onl
 ## Pre-releases
 
 ```bash
-versionx release pre-enter next
+versionx release prerelease <plan-id> --channel rc
 ```
 
-Sets the release channel to `next`. Subsequent releases tag as `my-app@0.3.0-next.1`, `my-app@0.3.0-next.2`. Exit with:
-
-```bash
-versionx release pre-exit
-```
-
-The next stable release rolls up the accumulated pre-release changes.
+This rewrites an approved plan into a prerelease variant and applies it through
+the current CLI path.
 
 ## Hotfixes
 
 From a release branch (e.g., `release/1.x`):
 
-```bash
-versionx release plan --branch release/1.x
-versionx release apply --branch release/1.x <plan.json>
-```
-
-Versionx cuts the release from the branch tip, bumps only the affected packages, and does not move main. Cherry-pick the hotfix commit back to main yourself (or let your CI do it).
+The current public alpha does not expose the richer branch-specific flags yet.
+Use the release planner from the branch tip you want to release from.
 
 ## Cross-package coordination
 
@@ -130,11 +125,11 @@ See [Multi-repo & monorepos](/guides/multi-repo-and-monorepos) for the saga prot
 
 If you've configured a BYO API key (Anthropic, OpenAI, Gemini, or Ollama):
 
-```bash
-versionx release plan --ai-changelog
-```
+Use the dedicated changelog surface instead:
 
-Versionx groups the raw commits, sends them to your configured model, and produces a polished changelog. The plan still includes the raw commits so you can diff against the AI output. No key configured? The flag falls back to the template generator.
+```bash
+versionx changelog draft
+```
 
 ## Publishing
 
@@ -142,10 +137,9 @@ Versionx does **not** publish to registries. That's your CI's job. After `versio
 
 ## Troubleshooting
 
-- **Plan empty after merges.** Check PR titles follow the pattern the strategy expects. `versionx release plan --explain` traces the decision.
+- **Plan empty after merges.** Check PR titles follow the pattern the strategy expects and that the repo already has the config/lockfile state Versionx expects.
 - **Prerequisite check failed.** HEAD or the lockfile has moved since the plan was produced. Regenerate the plan.
-- **Stuck in pre-release.** `versionx release status` shows the current channel and the outstanding pre-release tags. `versionx release pre-exit` unsticks.
-- **Tag already exists.** Someone else cut the same release. Reconcile with `versionx release status --remote` and decide to re-tag or move on.
+- **Tag already exists.** Someone else cut the same release. Inspect the saved plan and repo state, then decide whether to retry or roll forward.
 
 ## See also
 

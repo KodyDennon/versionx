@@ -14,26 +14,29 @@ You'll learn:
 
 **Prerequisites:** an existing changesets setup, Versionx [installed](/get-started/install).
 
-## The fast path
+## Current alpha status
+
+There is now a real helper:
 
 ```bash
-versionx migrate changesets
+versionx migrate --from changesets
 ```
 
-- Reads `.changeset/config.json`.
-- Writes `versionx.toml` with `[release] strategy = "changesets"`.
-- Leaves `.changeset/*.md` files in place — they're the input.
+The current alpha migrates the release setting it can express today:
+
+- `[release].strategy = "changesets"`
+- your existing `.changeset/` files stay in place
+
+It also prints warnings for config that still needs manual follow-up.
 
 ## Config mapping
 
 | changesets | Versionx |
 |---|---|
-| `.changeset/config.json` → `baseBranch` | `[release] base-branch` |
-| `.changeset/config.json` → `access` | `[release] access` |
-| `.changeset/config.json` → `commit` | `[release] commit-on-version` |
-| `.changeset/config.json` → `linked` | `[release.linked]` |
-| `.changeset/config.json` → `ignore` | `[release.ignore]` |
-| `.changeset/config.json` → `updateInternalDependencies` | `[release] update-internal-dependencies` |
+| `.changeset/config.json` → `strategy` | `[release] strategy = "changesets"` |
+| `.changeset/config.json` → `linked` | Warning today; manual follow-up to `[[release.groups]]` |
+| `.changeset/config.json` → `ignore` | Warning today; no shipped schema key yet |
+| `.changeset/config.json` → `baseBranch` / `access` / `commit` / `updateInternalDependencies` | Warning today; manual review |
 | `.changeset/*.md` | Same files. Versionx reads them directly. |
 
 Changeset file format is unchanged:
@@ -51,14 +54,14 @@ Added the thing.
 
 | changesets | Versionx |
 |---|---|
-| `changeset` | `versionx release add` |
-| `changeset version` | `versionx release plan && versionx release apply` |
+| `changeset` | not yet replaced by a dedicated Versionx command |
+| `changeset version` | `versionx release plan`, then `approve`, then `apply` |
 | `changeset publish` | Done by your CI after Versionx tags. See [GitHub Actions recipes](/guides/github-actions-recipes). |
-| `changeset status` | `versionx release status` |
+| `changeset status` | inspect plans via `versionx release list` / `versionx release show` |
 
 ## Cutover recipe
 
-1. Run `versionx migrate changesets`. Inspect the produced `versionx.toml`.
+1. Run `versionx migrate --from changesets`.
 2. Commit: `chore: migrate from changesets to versionx`.
 3. Update CI to call `versionx release plan` / `versionx release apply` instead of `changeset version`.
 4. Keep `@changesets/cli` installed for now if PR authors have muscle memory; `changeset` the command still works. You can remove it later.
@@ -66,8 +69,8 @@ Added the thing.
 ## What changes
 
 - **Single binary.** You don't need `@changesets/cli` as a project dep (though it's fine to keep it as a convenience).
-- **Plan / apply.** `versionx release plan` emits a JSON plan. `versionx release apply plan.json` executes it. The traditional `changeset version` + manual review still works — Versionx exposes the same imperative path.
-- **Pre-release channels.** Versionx has a separate `--channel` flag rather than changesets' `pre enter / pre exit` mode. Migration: `changeset pre enter next` → `versionx release pre-enter next`.
+- **Plan / approve / apply.** The current alpha persists a release plan and applies it by `plan_id`.
+- **Pre-release channels.** Versionx supports `versionx release prerelease`, but the more ergonomic changesets-style flow is still evolving.
 
 ## What you gain
 
@@ -77,7 +80,9 @@ Added the thing.
 
 ## What you lose (carefully nothing)
 
-The changesets format is first-class in Versionx. Every other thing you can do in changesets, Versionx can do. If you find a gap, it's a bug — please [open an issue](https://github.com/KodyDennon/versionx/issues).
+Changesets compatibility is still partial in the current alpha. The helper gets
+you onto the real Versionx release surface, but some config still needs manual
+follow-up after the generated warnings.
 
 ## See also
 

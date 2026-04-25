@@ -183,7 +183,7 @@ impl Lockfile {
             source,
         })?;
         Ok(format!(
-            "# DO NOT EDIT — managed by `versionx sync`\n# See docs/spec/02-config-and-state-model.md §3\n\n{body}"
+            "# DO NOT EDIT — managed by `versionx sync` / `versionx update`\n# See docs/spec/02-config-and-state-model.md §3\n\n{body}"
         ))
     }
 

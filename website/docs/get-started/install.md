@@ -1,86 +1,48 @@
 ---
 title: Install
-description: Install Versionx on macOS, Linux, or Windows. One static binary, no runtime dependencies except git.
+description: Install the current Versionx alpha on macOS, Linux, or Windows.
 sidebar_position: 1
 ---
 
 # Install
 
-Versionx ships as a single static binary for every major platform. Pick the path that matches how you usually install dev tools.
+Versionx is currently in a public `0.1` alpha. The reliable install surfaces
+today are:
 
-## macOS / Linux (curl installer)
+- GitHub Releases prerelease artifacts
+- Source builds via Cargo
 
-```bash
-curl --proto '=https' --tlsv1.2 -LsSf \
-  https://github.com/KodyDennon/versionx/releases/latest/download/versionx-cli-installer.sh | sh
-```
+Homebrew, Scoop, npm, and PyPI packages are planned, but they are not the
+recommended install path for the current alpha.
 
-Installs into `~/.cargo/bin` (or `~/.local/bin` depending on your setup) and prints the exact path so you can verify.
+## GitHub Releases (recommended for alpha testers)
 
-## Windows (PowerShell installer)
+Open the [GitHub Releases page](https://github.com/KodyDennon/versionx/releases)
+and download the newest prerelease for your platform.
 
-```powershell
-powershell -ExecutionPolicy ByPass -c "irm https://github.com/KodyDennon/versionx/releases/latest/download/versionx-cli-installer.ps1 | iex"
-```
+Current artifacts include macOS, Linux, and Windows archives for `versionx-cli`.
+This is the install path the project actively verifies today.
 
-Installs into `%LOCALAPPDATA%\Programs\versionx`. The installer adds the directory to your user PATH.
-
-## Homebrew (macOS / Linux)
+## Cargo (build from source)
 
 ```bash
-brew install versionx
+git clone https://github.com/KodyDennon/versionx
+cd versionx
+cargo install --path crates/versionx-cli
 ```
 
-:::note
-Formula publishes with each tagged release. Cutting edge users: `brew install --HEAD versionx`.
-:::
+Requires Rust `1.95+`. This is the simplest way to test the current alpha if you
+already have a Rust toolchain and want a source-based install.
 
-## Scoop (Windows)
+## Supported release targets
 
-```powershell
-scoop bucket add versionx https://github.com/KodyDennon/versionx
-scoop install versionx
-```
-
-## Cargo (from source)
-
-```bash
-cargo install versionx-cli
-```
-
-Installs the `versionx` binary into `~/.cargo/bin`. Requires Rust 1.95+.
-
-## npm (shim package)
-
-```bash
-npm install -g @versionx/cli
-```
-
-The npm package is a thin shim that downloads the right platform binary on first run and forwards invocations to it. Useful inside JavaScript-heavy environments.
-
-## PyPI (shim package)
-
-```bash
-pipx install versionx
-# or
-pip install --user versionx
-```
-
-The PyPI package is the same shim idea for Python-heavy environments.
-
-## Manual binary
-
-Prebuilt archives for every supported platform are published on [GitHub Releases](https://github.com/KodyDennon/versionx/releases/latest). Download, extract, put the binary on your PATH.
-
-Supported platforms:
-
-- `x86_64-unknown-linux-gnu` (glibc 2.28+)
-- `x86_64-unknown-linux-musl` (fully static)
+- `x86_64-unknown-linux-gnu`
 - `aarch64-unknown-linux-gnu`
 - `x86_64-apple-darwin`
 - `aarch64-apple-darwin`
 - `x86_64-pc-windows-msvc`
-- `aarch64-pc-windows-msvc`
+
+These are the release targets configured in the current `cargo-dist` pipeline.
 
 ## Verify the install
 
@@ -88,10 +50,10 @@ Supported platforms:
 versionx --version
 ```
 
-You should see something like:
+You should see:
 
 ```text
-versionx 0.7.0 (abc1234 2026-04-12)
+versionx 0.1.0
 ```
 
 ## Wire up the shell hook
@@ -102,7 +64,8 @@ Versionx uses a thin shell hook to keep the per-session daemon alive and to put 
 versionx install-shell-hook
 ```
 
-This writes the right line to `~/.zshrc` / `~/.bashrc` / your fish config. Reload your shell:
+This writes the right line to `~/.zshrc` / `~/.bashrc` / your fish config and
+sets up the shim/daemon path the CLI expects. Reload your shell:
 
 ```bash
 exec $SHELL
@@ -110,19 +73,17 @@ exec $SHELL
 
 Now a bare `versionx` in any repo works and shows the right next steps.
 
-## Uninstall
+## Planned package channels
 
-If you installed via the curl / PowerShell installer, use the paired uninstaller:
+These are intentionally not advertised as current alpha defaults yet:
 
-```bash
-# macOS / Linux
-curl -LsSf https://github.com/KodyDennon/versionx/releases/latest/download/versionx-cli-uninstaller.sh | sh
+- Homebrew
+- Scoop
+- npm shim
+- PyPI shim
 
-# Windows
-powershell -ExecutionPolicy ByPass -c "irm https://github.com/KodyDennon/versionx/releases/latest/download/versionx-cli-uninstaller.ps1 | iex"
-```
-
-If you installed via a package manager, use that package manager's uninstall command.
+The release tooling is being shaped for them, but the public docs should not ask
+you to depend on them until they are actually live and verified end to end.
 
 To remove all per-user state (runtimes, shims, cache, state DB), run:
 

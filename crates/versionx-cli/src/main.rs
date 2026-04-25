@@ -4,10 +4,14 @@
 //! `versionx-core` — the CLI never calls git, adapters, or ecosystem tools
 //! directly (see `docs/spec/01-architecture-overview.md`).
 //!
-//! Status: 0.1.0 scaffold. Commands return informative `NotImplemented` errors
-//! until each subsystem lands per `docs/spec/11-version-roadmap.md`.
+//! Status: 0.1.x alpha. Commands route to implemented subsystems when shipped
+//! and surface targeted gaps while the remaining roadmap lands.
 
 #![deny(unsafe_code)]
+
+mod import_cmd;
+mod support_cmd;
+mod update_cmd;
 
 use std::io::{self, Write};
 use std::process::ExitCode;
@@ -15,7 +19,10 @@ use std::process::ExitCode;
 use anyhow::{Context, Result};
 use camino::Utf8PathBuf;
 use clap::{Parser, Subcommand, ValueEnum};
+use import_cmd::{ImportSource, run_import};
+use support_cmd::{run_changeset, run_doctor, run_exec, run_self_check};
 use tracing_subscriber::{EnvFilter, fmt, prelude::*};
+use update_cmd::{UpdateArgs, run_update};
 use versionx_core::EventBus;
 use versionx_core::commands::{
     self as core_cmds, ActivateOptions as CoreActivate, CoreContext,
@@ -84,6 +91,9 @@ enum Command {
     /// Install everything declared in `versionx.toml` + `versionx.lock`:
     /// toolchains, package managers, and dependencies.
     Sync(SyncArgs),
+
+    /// Update ecosystem dependencies and refresh the recorded lock metadata.
+    Update(UpdateArgs),
 
     /// Verify that the lockfile matches the current manifest state.
     /// Designed for CI as a fast fail-closed integrity check.
@@ -198,6 +208,7 @@ enum Command {
 
     /// Import an existing repo's tool config (mise/asdf/nvm/poetry)
     /// into a fresh `versionx.toml`.
+    #[command(alias = "migrate")]
     Import {
         /// Source format. Auto-detects when omitted.
         #[arg(long, value_enum)]
@@ -210,14 +221,6 @@ enum Command {
     /// Changeset workflow (release-please-style metadata files).
     #[command(subcommand)]
     Changeset(ChangesetCommand),
-}
-
-#[derive(Copy, Clone, Debug, ValueEnum)]
-enum ImportSource {
-    Mise,
-    Asdf,
-    Nvm,
-    Poetry,
 }
 
 #[derive(Subcommand, Debug)]
@@ -351,6 +354,7 @@ enum DaemonCommand {
 #[derive(Subcommand, Debug)]
 enum ReleaseCommand {
     /// Compute a release plan without executing it.
+    #[command(alias = "plan")]
     Propose {
         /// Strategy: `conventional` (default), `pr-title`, `manual`.
         #[arg(long, default_value = "conventional")]
@@ -625,6 +629,7 @@ fn dispatch(cli: Cli) -> Result<ExitCode> {
     match command {
         Command::Init(args) => run_init(&args, cli.cwd.as_deref(), cli.output),
         Command::Sync(args) => block_on(run_sync(args, cli.cwd.as_deref(), cli.output)),
+        Command::Update(args) => block_on(run_update(args, cli.cwd.as_deref(), cli.output)),
         Command::Verify => run_verify(cli.cwd.as_deref(), cli.output),
         Command::Status => run_status(cli.cwd.as_deref(), cli.output),
         Command::Install(args) => block_on(run_install(args, cli.output)),
@@ -3490,344 +3495,6 @@ fn describe_arg(arg: &clap::Arg) -> serde_json::Value {
 // -------- doctor / exec / import / self-check / changeset --------------
 
 /// `versionx doctor` — structured pass/fail per check.
-fn run_doctor(cwd: Option<&camino::Utf8Path>, output: OutputFormat) -> Result<ExitCode> {
-    let root = resolve_cwd(cwd).unwrap_or_else(|_| camino::Utf8PathBuf::from("."));
-    let mut checks: Vec<(String, bool, String)> = Vec::new();
-
-    let home = versionx_core::paths::VersionxHome::detect();
-    checks.push(match &home {
-        Ok(h) => ("VERSIONX_HOME".into(), true, h.data.to_string()),
-        Err(e) => ("VERSIONX_HOME".into(), false, e.to_string()),
-    });
-
-    let in_git = versionx_git::read::summarize(&root).is_ok();
-    checks.push(("git repo".into(), in_git, root.to_string()));
-
-    let has_config = root.join("versionx.toml").is_file();
-    checks.push((
-        "versionx.toml present".into(),
-        has_config,
-        root.join("versionx.toml").to_string(),
-    ));
-
-    let has_lock = root.join("versionx.lock").is_file();
-    checks.push(("versionx.lock present".into(), has_lock, root.join("versionx.lock").to_string()));
-
-    let daemon_paths = versionx_daemon::DaemonPaths::from_env();
-    let daemon_running = daemon_paths.as_ref().is_some_and(|p| {
-        tokio::runtime::Builder::new_current_thread()
-            .enable_all()
-            .build()
-            .ok()
-            .is_some_and(|rt| rt.block_on(versionx_daemon::is_running(p)))
-    });
-    checks.push((
-        "daemon".into(),
-        daemon_running,
-        daemon_paths.as_ref().map_or_else(|| "no DaemonPaths".into(), |p| p.socket.to_string()),
-    ));
-
-    let shim_bin = versionx_core::commands::shim_install::shim_binary_path();
-    checks.push(shim_bin.as_ref().map_or_else(
-        || ("shim binary".into(), false, "not found".into()),
-        |p| ("shim binary".into(), true, p.to_string()),
-    ));
-
-    let any_failed = checks.iter().any(|(_, ok, _)| !ok);
-
-    match output {
-        OutputFormat::Json | OutputFormat::Ndjson => {
-            let payload: Vec<_> = checks
-                .iter()
-                .map(|(n, ok, d)| serde_json::json!({"check": n, "ok": ok, "detail": d}))
-                .collect();
-            let mut stdout = io::stdout().lock();
-            serde_json::to_writer(&mut stdout, &payload)?;
-            stdout.write_all(b"\n")?;
-        }
-        OutputFormat::Human => {
-            for (name, ok, detail) in &checks {
-                let mark = if *ok { "✓" } else { "✗" };
-                println!("  {mark} {name:<28} {detail}");
-            }
-        }
-    }
-    Ok(ExitCode::from(u8::from(any_failed)))
-}
-
-/// `versionx exec <tool> -- args…` — resolve the workspace's pinned
-/// version of `<tool>` then exec it, forwarding stdio.
-async fn run_exec(
-    tool: String,
-    args: Vec<String>,
-    cwd: Option<&camino::Utf8Path>,
-    output: OutputFormat,
-) -> Result<ExitCode> {
-    let root = resolve_cwd(cwd)?;
-    let (_bus, ctx) = core_ctx()?;
-    let opts = CoreWhichOpts { tool: tool.clone(), cwd: root };
-    let resolved = match core_cmds::which(&ctx, &opts).await {
-        Ok(o) => o,
-        Err(err) => return Ok(render_core_error(&err, output, "exec")),
-    };
-    let Some(bin) = resolved.binary else {
-        return bail_with(
-            output,
-            "exec",
-            &format!("no resolved binary for `{tool}`: {}", resolved.reason),
-        );
-    };
-    let status = std::process::Command::new(bin.as_str())
-        .args(&args)
-        .status()
-        .with_context(|| format!("spawning {bin}"))?;
-    Ok(ExitCode::from(status.code().unwrap_or(1) as u8))
-}
-
-/// `versionx import` — detect a sibling tool config and seed
-/// `versionx.toml`. Currently supports mise / asdf / nvm / poetry.
-fn run_import(
-    from: Option<ImportSource>,
-    cwd: Option<&camino::Utf8Path>,
-    output: OutputFormat,
-) -> Result<ExitCode> {
-    let root = resolve_cwd(cwd)?;
-    let detected = from.or_else(|| detect_import_source(&root));
-    let Some(source) = detected else {
-        return bail_with(
-            output,
-            "import",
-            "no recognized config found (looked for .mise.toml, .tool-versions, .nvmrc, pyproject.toml)",
-        );
-    };
-
-    let pins = match source {
-        ImportSource::Mise => parse_mise(&root),
-        ImportSource::Asdf => parse_asdf(&root),
-        ImportSource::Nvm => parse_nvmrc(&root),
-        ImportSource::Poetry => parse_pyproject(&root),
-    };
-
-    let mut versionx_toml_path = root.join("versionx.toml");
-    if versionx_toml_path.is_file() {
-        // Append into a `# imported` section rather than overwrite.
-        versionx_toml_path = root.join("versionx.imported.toml");
-    }
-
-    let mut body =
-        String::from("# Imported by `versionx import`\nschema_version = \"1\"\n\n[runtimes]\n");
-    for (tool, version) in &pins {
-        use std::fmt::Write;
-        let _ = writeln!(body, "{tool} = \"{version}\"");
-    }
-    std::fs::write(versionx_toml_path.as_std_path(), body)
-        .context("writing imported versionx.toml")?;
-    emit_msg(
-        output,
-        &format!("imported {} pins from {source:?} → {versionx_toml_path}", pins.len()),
-        serde_json::json!({"source": format!("{source:?}"), "path": versionx_toml_path.to_string(), "pins": pins}),
-    )?;
-    Ok(ExitCode::from(0))
-}
-
-fn detect_import_source(root: &camino::Utf8Path) -> Option<ImportSource> {
-    if root.join(".mise.toml").is_file() || root.join("mise.toml").is_file() {
-        return Some(ImportSource::Mise);
-    }
-    if root.join(".tool-versions").is_file() {
-        return Some(ImportSource::Asdf);
-    }
-    if root.join(".nvmrc").is_file() {
-        return Some(ImportSource::Nvm);
-    }
-    if root.join("pyproject.toml").is_file() {
-        return Some(ImportSource::Poetry);
-    }
-    None
-}
-
-fn parse_mise(root: &camino::Utf8Path) -> Vec<(String, String)> {
-    for name in [".mise.toml", "mise.toml"] {
-        if let Ok(raw) = std::fs::read_to_string(root.join(name).as_std_path())
-            && let Ok(val) = toml::from_str::<toml::Value>(&raw)
-            && let Some(tbl) = val.get("tools").and_then(|v| v.as_table())
-        {
-            return tbl
-                .iter()
-                .filter_map(|(k, v)| v.as_str().map(|s| (k.clone(), s.to_string())))
-                .collect();
-        }
-    }
-    Vec::new()
-}
-
-fn parse_asdf(root: &camino::Utf8Path) -> Vec<(String, String)> {
-    let Ok(raw) = std::fs::read_to_string(root.join(".tool-versions").as_std_path()) else {
-        return Vec::new();
-    };
-    raw.lines()
-        .filter_map(|line| {
-            let line = line.split('#').next()?.trim();
-            if line.is_empty() {
-                return None;
-            }
-            let mut parts = line.split_whitespace();
-            let tool = parts.next()?.to_string();
-            let version = parts.next()?.to_string();
-            Some((tool, version))
-        })
-        .collect()
-}
-
-fn parse_nvmrc(root: &camino::Utf8Path) -> Vec<(String, String)> {
-    std::fs::read_to_string(root.join(".nvmrc").as_std_path())
-        .ok()
-        .map(|s| vec![("node".into(), s.trim().trim_start_matches('v').to_string())])
-        .unwrap_or_default()
-}
-
-fn parse_pyproject(root: &camino::Utf8Path) -> Vec<(String, String)> {
-    let Ok(raw) = std::fs::read_to_string(root.join("pyproject.toml").as_std_path()) else {
-        return Vec::new();
-    };
-    let Ok(val) = toml::from_str::<toml::Value>(&raw) else {
-        return Vec::new();
-    };
-    let mut out = Vec::new();
-    if let Some(py) = val
-        .get("tool")
-        .and_then(|v| v.get("poetry"))
-        .and_then(|v| v.get("dependencies"))
-        .and_then(|v| v.get("python"))
-        .and_then(|v| v.as_str())
-    {
-        out.push(("python".into(), py.trim_start_matches('^').trim_start_matches('~').to_string()));
-    }
-    out
-}
-
-/// `versionx self-check` — run doctor + verify and surface any
-/// failure. We track success with a small bool flag rather than
-/// inspecting `ExitCode` (which is opaque after `From::from(u8)`).
-fn run_self_check(cwd: Option<&camino::Utf8Path>, output: OutputFormat) -> Result<ExitCode> {
-    let mut all_ok = true;
-
-    // doctor returns Ok(ExitCode) but we lose visibility into the
-    // numeric — re-run the underlying check inline. The doctor()
-    // function still owns the printing, so we just shadow its result.
-    let _ = run_doctor(cwd, output)?;
-    // Re-run the failable bits to detect failure for our own
-    // bookkeeping. Doctor already printed everything to the user.
-    if let Ok(root) = resolve_cwd(cwd)
-        && versionx_git::read::summarize(&root).is_err()
-    {
-        all_ok = false;
-    }
-
-    let _ = run_verify(cwd, output)?;
-    // verify prints to stderr on problems; we approximate failure
-    // as "lockfile missing" — good enough for self-check signal.
-    if let Ok(root) = resolve_cwd(cwd)
-        && !root.join("versionx.lock").is_file()
-        && root.join("versionx.toml").is_file()
-    {
-        all_ok = false;
-    }
-
-    if all_ok {
-        emit_msg(output, "self-check passed", serde_json::json!({"ok": true}))?;
-        Ok(ExitCode::from(0))
-    } else {
-        bail_with(output, "self-check", "one or more checks failed (see prior output)")
-    }
-}
-
-/// `versionx changeset {add,check,list}` — release-please-style
-/// per-change metadata files under `.changeset/`.
-fn run_changeset(
-    sub: ChangesetCommand,
-    cwd: Option<&camino::Utf8Path>,
-    output: OutputFormat,
-) -> Result<ExitCode> {
-    let root = resolve_cwd(cwd)?;
-    let dir = root.join(".changeset");
-    std::fs::create_dir_all(dir.as_std_path()).context("creating .changeset/ dir")?;
-
-    match sub {
-        ChangesetCommand::Add { component, level, summary } => {
-            let id = format!(
-                "{}-{}",
-                chrono::Utc::now().format("%Y%m%d-%H%M%S"),
-                component.replace('/', "_")
-            );
-            let path = dir.join(format!("{id}.md"));
-            let body = format!(
-                "---\ncomponent: {component}\nlevel: {level}\n---\n\n{}\n",
-                summary.unwrap_or_default()
-            );
-            std::fs::write(path.as_std_path(), body).context("writing changeset")?;
-            emit_msg(
-                output,
-                &format!("wrote {path}"),
-                serde_json::json!({"path": path.to_string()}),
-            )?;
-            Ok(ExitCode::from(0))
-        }
-        ChangesetCommand::List => {
-            let mut entries: Vec<_> = std::fs::read_dir(dir.as_std_path())
-                .context("reading .changeset/")?
-                .filter_map(Result::ok)
-                .filter(|e| e.path().extension().and_then(|s| s.to_str()) == Some("md"))
-                .collect();
-            entries.sort_by_key(std::fs::DirEntry::file_name);
-            match output {
-                OutputFormat::Json | OutputFormat::Ndjson => {
-                    let names: Vec<_> =
-                        entries.iter().filter_map(|e| e.file_name().into_string().ok()).collect();
-                    let mut stdout = io::stdout().lock();
-                    serde_json::to_writer(&mut stdout, &names)?;
-                    stdout.write_all(b"\n")?;
-                }
-                OutputFormat::Human => {
-                    for e in &entries {
-                        if let Some(name) = e.file_name().to_str() {
-                            println!("  · {name}");
-                        }
-                    }
-                }
-            }
-            Ok(ExitCode::from(0))
-        }
-        ChangesetCommand::Check => {
-            let mut errors = Vec::new();
-            let entries = std::fs::read_dir(dir.as_std_path()).context("reading .changeset/")?;
-            for entry in entries.filter_map(Result::ok) {
-                let path = entry.path();
-                if path.extension().and_then(|s| s.to_str()) != Some("md") {
-                    continue;
-                }
-                let raw = std::fs::read_to_string(&path).unwrap_or_default();
-                if !raw.starts_with("---") {
-                    errors.push(format!("{}: missing frontmatter", path.display()));
-                    continue;
-                }
-                if !raw.contains("component:") || !raw.contains("level:") {
-                    errors.push(format!(
-                        "{}: missing required fields (component / level)",
-                        path.display()
-                    ));
-                }
-            }
-            if errors.is_empty() {
-                emit_msg(output, "all changesets valid", serde_json::json!({"ok": true}))?;
-                Ok(ExitCode::from(0))
-            } else {
-                bail_with(output, "changeset check", &errors.join("; "))
-            }
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -3843,6 +3510,7 @@ mod tests {
         let cmds = [
             vec!["versionx", "init"],
             vec!["versionx", "sync"],
+            vec!["versionx", "update", "--plan"],
             vec!["versionx", "verify"],
             vec!["versionx", "status"],
             vec!["versionx", "install", "node", "20"],
@@ -3854,6 +3522,7 @@ mod tests {
             vec!["versionx", "release", "propose"],
             vec!["versionx", "policy", "init"],
             vec!["versionx", "mcp", "serve"],
+            vec!["versionx", "migrate", "--from", "changesets"],
         ];
         for argv in cmds {
             assert!(Cli::try_parse_from(&argv).is_ok(), "failed to parse: {argv:?}");

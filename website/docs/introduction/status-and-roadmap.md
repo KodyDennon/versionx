@@ -1,46 +1,46 @@
 ---
 title: Status & roadmap
-description: Versionx is 0.7 feature-complete. Thirty crates, 280+ tests. Path to 1.0 runs through stability hardening and ecosystem breadth.
+description: Versionx is a public 0.1 alpha with real foundations and a lot of roadmap still ahead.
 sidebar_position: 3
 ---
 
 # Status & roadmap
 
-Versionx is **0.7 feature-complete**. Every subsystem called out in the [spec](https://github.com/KodyDennon/versionx/tree/main/docs/spec) has landed as real code with tests. The path to 1.0 is hardening, not new invention.
+Versionx is **0.1 alpha, publicly testable**. The repo already has a substantial
+Rust workspace and a working CLI/MCP foundation, but the public story needs to
+stay honest: some surfaces are ready for outside alpha use today, and many of
+the broader automation/distribution features are still roadmap items.
 
 ## What's shipped today
 
-- **Workspace discovery.** Auto-detects Node, Python, and Rust projects without any config. Produces a sensible `versionx.toml` on request.
-- **Content-hash bump planner.** Plans dependency and release bumps with Blake3 prerequisites and a TTL so plans are safe to share.
-- **Release engine.** Plan / approve / apply flow with rollback for every release strategy (`pr-title`, `changesets`, `commits`, `calver`, `manual`).
-- **Policy engine.** Declarative TOML rules plus a sandboxed Luau evaluator for complex logic. Waivers with mandatory expiry.
-- **MCP server.** Full `rmcp` implementation, stdio + local HTTP, ~10 workflow-shaped tools.
-- **BYO-API-key AI overlay.** Anthropic, OpenAI, Gemini, and Ollama clients for headless use. No bundled LLM.
-- **Versiond daemon.** JSON-RPC 2.0 over UDS / named pipes, file-watch cache invalidation, event streaming.
-- **TUI dashboard.** `ratatui`-based fleet view and release planner.
-- **Cross-repo fleet orchestration.** Saga protocol for atomic multi-repo releases.
-- **30 crates, 280+ tests.** Unit, property, snapshot, and integration coverage.
+- **Workspace discovery.** Detects Node, Python, Rust, and mixed workspaces without config.
+- **Config bootstrap.** `versionx init` generates a usable `versionx.toml`.
+- **Lockfile flow.** `versionx sync` creates `versionx.lock` and records runtime state.
+- **Dependency updates.** `versionx update` ships for Node, Python, and Rust with `--plan`, optional package targeting, and lockfile refresh.
+- **Release planning.** `release plan` / `propose`, `approve`, `apply`, `rollback`, `snapshot`, and `prerelease` work in the CLI.
+- **Policy engine.** `policy init/check/explain/list/update/verify` and expiring waivers are implemented.
+- **MCP server.** `versionx mcp serve` and `versionx mcp describe` expose the current agent surface.
+- **Daemon and shell hook.** `versionx daemon ...` and `install-shell-hook` are wired for warm caching.
+- **30 crates and a real CI/docs pipeline.** This is a serious codebase, not just a spec dump.
 
-## Version badges
+## What is not shipped yet
 
-Every Reference page on this site carries one of:
-
-- **Stable** — shipped, tested, contract-locked until the next major.
-- **Experimental** — shipped, but the surface may change before 1.0.
-- **Planned** — not yet implemented. Tracked on the [roadmap](/roadmap).
-
-Anything without a badge is Stable.
+- Update plan approval/apply artifacts beyond the current `versionx update --plan` dry-run
+- Published reusable GitHub Actions
+- Broad package-manager install channels (Homebrew, Scoop, npm, PyPI)
+- A fully hardened outside-user multi-repo story
+- A docs site where every page is already aligned to the current alpha surface
 
 ## Road to 1.0
 
 1.0 ships when:
 
-1. Every subsystem is Stable (no Experimental badges in Reference).
-2. All Tier-1 ecosystems (Node, Python, Rust) have a full adapter + runtime pair with migration paths.
-3. Tier-2 ecosystems (Go, Ruby) land as adapters (runtimes can trail).
-4. The reusable GitHub Actions are published to a stable org.
-5. Windows parity for every feature that has a Unix-only corner.
-6. Fleet operations have been exercised by at least one outside user on ≥20 repos.
+1. The current alpha commands are hardened and documented end to end.
+2. Tier-1 ecosystems (Node, Python, Rust) have a clean outside-user workflow.
+3. Dependency updates and broader release automation land as real commands, not doc promises.
+4. Package distribution beyond GitHub Releases is actually live.
+5. Windows parity closes the remaining rough edges.
+6. Outside users have successfully exercised the tool on real repos.
 
 Target: late 2026. No committed date.
 
@@ -61,6 +61,6 @@ The full per-version plan with gates and demos lives in [`docs/spec/11-version-r
 
 ## See also
 
-- [Roadmap](/roadmap) — the version-sliced feature timeline.
+- [Roadmap](/roadmap) — the honest alpha-to-1.0 timeline.
 - [Design principles](/introduction/design-principles) — why the roadmap is shaped this way.
 - [`docs/spec/11-version-roadmap.md`](https://github.com/KodyDennon/versionx/blob/main/docs/spec/11-version-roadmap.md) — the authoritative internal roadmap.

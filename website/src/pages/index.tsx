@@ -11,27 +11,20 @@ import HomepageFeatures from '@site/src/components/HomepageFeatures';
 import styles from './index.module.css';
 
 const INSTALL_SNIPPET = `# macOS / Linux
-curl --proto '=https' --tlsv1.2 -LsSf \\
-  https://github.com/KodyDennon/versionx/releases/latest/download/versionx-cli-installer.sh | sh
+# Download the newest prerelease for your platform:
+# https://github.com/KodyDennon/versionx/releases
 
-# Windows (PowerShell)
-powershell -ExecutionPolicy ByPass -c "irm https://github.com/KodyDennon/versionx/releases/latest/download/versionx-cli-installer.ps1 | iex"
-
-# From source
-cargo install versionx-cli`;
+# Or build from a cloned checkout:
+git clone https://github.com/KodyDennon/versionx
+cd versionx
+cargo install --path crates/versionx-cli`;
 
 const DEMO_SNIPPET = `$ versionx
-Versionx 0.7.0
+versionx 0.1.0 · ./my-app
+  git✓ · config✗ · lock✗ · daemon✗ · 3 components discovered
 
-Workspace  ./my-app    (node 22.11.0, python 3.13.1, rust 1.95)
-Outdated   3 packages in apps/web  (axios ^1.6 → ^1.7)
-Policy     clean
-Ready      release plan   (last release 12d ago)
-
-What next?
-  versionx status                show ecosystem + release health
-  versionx update --plan         preview dependency bumps
-  versionx release plan          propose the next release`;
+  → run \`versionx init\` to synthesize a versionx.toml for this workspace.
+  → run \`versionx daemon start\` (or \`versionx install-shell-hook\`) for warm caching.`;
 
 function HomepageHeader(): ReactNode {
   const {siteConfig} = useDocusaurusContext();
@@ -67,7 +60,8 @@ function HomepageHeader(): ReactNode {
               </Link>
             </div>
             <p className={styles.heroStatus}>
-              <strong>0.7 feature-complete.</strong> 30 crates, 280+ tests.{' '}
+              <strong>0.1 alpha, publicly testable.</strong> Real CLI + MCP foundations,
+              hardening in progress.{' '}
               <Link to="/roadmap">Road to 1.0 →</Link>
             </p>
           </div>
@@ -95,7 +89,8 @@ function InstallBand(): ReactNode {
         </p>
         <CodeBlock language="bash">{INSTALL_SNIPPET}</CodeBlock>
         <p className={styles.sectionFoot}>
-          Homebrew, Scoop, Cargo, npm and PyPI shims — see{' '}
+          GitHub Releases and source builds work today. Broader package channels
+          are planned after alpha hardening. See{' '}
           <Link to="/get-started/install">Install</Link> for every platform.
         </p>
       </div>

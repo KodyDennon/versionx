@@ -72,7 +72,8 @@ The Luau runtime is sandboxed — no filesystem access, no network, no `os.*`. T
 
 ## Evaluating policy
 
-Automatic — every `versionx release plan`, `versionx update --plan`, and `versionx sync` runs applicable policies. Output:
+Automatic — the current alpha evaluates applicable policies during the release
+and sync flows. You can always run a manual check too. Output:
 
 ```text
 Policy
@@ -88,7 +89,7 @@ Policy
 Manual run:
 
 ```bash
-versionx policy eval --plan plan.json
+versionx policy check
 ```
 
 ## Waivers
@@ -166,9 +167,8 @@ reason = "Major bumps require review. Add a waiver or downgrade to minor."
 
 ## Troubleshooting
 
-- **Policy misses.** `versionx policy explain --rule <id>` walks the matching logic for the current plan.
-- **Luau syntax error.** `versionx policy lint` runs every `.policy.lua` file in a dry sandbox.
-- **Expired waiver in CI.** `versionx policy waivers --check` exits non-zero if any referenced waiver has expired.
+- **Policy misses.** `versionx policy explain <name>` walks the matching logic for a specific policy.
+- **Expired waivers.** `versionx waiver audit` shows live / expiring / expired waiver state.
 
 ## See also
 

@@ -1,6 +1,6 @@
 ---
 title: Quickstart
-description: Try Versionx on a real repo in 60 seconds. Zero configuration. Detects what you're using and suggests next steps.
+description: Try the current Versionx alpha on a real repo in a few minutes.
 sidebar_position: 2
 ---
 
@@ -12,7 +12,8 @@ You'll learn:
 - What the auto-detection produces.
 - Which command to reach for next.
 
-**Prerequisites:** you've [installed](/get-started/install) Versionx and run `versionx install-shell-hook`.
+**Prerequisites:** you've [installed](/get-started/install) Versionx. `versionx install-shell-hook`
+is recommended, but not required for the basic alpha flow.
 
 ## 1. Run it bare
 
@@ -25,20 +26,15 @@ versionx
 You'll see something like:
 
 ```text
-Versionx 0.7.0
+versionx 0.1.0 · ./my-app
+  git✓ · config✗ · lock✗ · daemon✗ · 3 components discovered
 
-Workspace  ./my-app    (node 22.11.0, python 3.13.1, rust 1.95)
-Outdated   3 packages in apps/web  (axios ^1.6 → ^1.7)
-Policy     clean
-Ready      release plan   (last release 12d ago)
-
-What next?
-  versionx status                show ecosystem + release health
-  versionx update --plan         preview dependency bumps
-  versionx release plan          propose the next release
+  → run `versionx init` to synthesize a versionx.toml for this workspace.
+  → run `versionx daemon start` (or `versionx install-shell-hook`) for warm caching.
 ```
 
-That's a zero-config run. Versionx walked the directory, detected which ecosystems are in use, and offered relevant actions.
+That's the current zero-config alpha story: discovery is real, and the CLI gives
+you the next useful step instead of assuming the repo is already configured.
 
 ## 2. See what's in scope
 
@@ -46,33 +42,37 @@ That's a zero-config run. Versionx walked the directory, detected which ecosyste
 versionx status
 ```
 
-Gives you a longer view — every detected ecosystem, every outdated dependency, every policy rule that would match, the current release state. Same JSON is available with `--output json`.
+Gives you a longer view of detected components, runtime pins, git/config/lockfile
+state, and the current daemon status. Same JSON is available with `--output json`.
 
-## 3. Preview a dependency bump (no side effects)
-
-```bash
-versionx update --plan
-```
-
-Emits a JSON plan describing exactly which package manifests would change, which lockfiles would refresh, and what the new resolved versions would be. Nothing has happened yet. You can inspect the plan, stash it, and apply it later:
-
-```bash
-versionx update --plan > plan.json
-# review plan.json
-versionx apply plan.json
-```
-
-This is the core **plan / apply** contract. Every mutating command supports it.
-
-## 4. Generate a config (optional)
-
-If you want to pin a runtime or change defaults, produce a starter `versionx.toml`:
+## 3. Generate config
 
 ```bash
 versionx init
 ```
 
-It writes a minimal config reflecting what was detected. Edit away. See [`versionx.toml` reference](/reference/versionx-toml) for the full schema.
+This writes a starter `versionx.toml` from the ecosystems Versionx discovered.
+For a simple Node repo, the generated file looks like:
+
+```toml
+[versionx]
+schema_version = "1"
+
+[runtimes]
+pnpm = "9.0.0"
+
+[ecosystems.node]
+package_manager = "pnpm"
+```
+
+## 4. Create the lockfile state
+
+```bash
+versionx sync
+```
+
+This resolves and records the current state into `versionx.lock`. That makes
+later verification and release planning reproducible.
 
 ## 5. Propose a release
 
@@ -80,13 +80,20 @@ It writes a minimal config reflecting what was detected. Edit away. See [`versio
 versionx release plan
 ```
 
-Parses commit history (or changesets, or PR titles — depending on your chosen strategy) and emits a release plan: what bumps where, what the changelog looks like, what tags to create. Approve and apply the same way:
+`release plan` is an alias for the current `release propose` command. It writes
+the plan into `.versionx/plans/` and prints the `plan_id` you need for the next
+steps.
 
 ```bash
-versionx release plan > release.json
-# review release.json
-versionx release apply release.json
+versionx release approve <plan-id>
+versionx release apply <plan-id>
 ```
+
+## What's not in this alpha yet
+
+- Update plan approval/apply artifacts like the release workflow has
+- Published reusable GitHub Actions
+- Broader package-manager distribution channels like Homebrew/Scoop/npm/PyPI
 
 ## What next?
 

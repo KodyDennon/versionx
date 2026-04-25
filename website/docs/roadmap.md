@@ -1,6 +1,6 @@
 ---
 title: Roadmap
-description: Version-sliced roadmap from 0.7 (today) through 1.0 and beyond. Each item has a status badge.
+description: Honest roadmap from the current 0.1 alpha through 1.0.
 sidebar_position: 100
 ---
 
@@ -17,51 +17,31 @@ Status legend:
 
 ---
 
-## 0.7 (current) — feature-complete
+## 0.1 (current) — public alpha foundation
 
 **Shipped:**
 
 - Workspace discovery with zero-config auto-detection.
-- Content-hash bump planner with Blake3 prerequisites and TTLs.
-- Release engine: plan / approve / apply / rollback for every strategy.
+- `versionx init` config generation.
+- Release engine: plan/propose, approve, apply, rollback, snapshot, prerelease.
 - Policy engine: declarative TOML + sandboxed Luau, waivers with mandatory expiry.
 - MCP server: `rmcp`, stdio + local HTTP, ~10 tools.
 - BYO-API-key AI overlay: Anthropic / OpenAI / Gemini / Ollama.
 - Versiond daemon: JSON-RPC 2.0, file-watch cache invalidation.
-- TUI dashboard.
 - Cross-repo fleet orchestration with saga protocol.
 - 30 crates, 280+ tests.
 
 ---
 
-## 0.8 — hardening
+## Next alpha steps — hardening and honesty
 
 **Planned:**
 
+- Make the docs/site match the shipped alpha surface everywhere.
+- Improve first-run UX around `init`, shell-hook install, and doctor output.
+- Harden the single-repo release flow for outside users.
+- Publish and verify broader install channels only after they are actually live.
 - Windows parity audit across every subsystem. Close every "Unix-only" corner.
-- Cross-platform CI matrix expansion (Windows ARM64, Linux musl on ARM64).
-- Error-message pass. Every user-facing error ends with an actionable suggestion.
-- Doctor command (`versionx doctor`) covers every known failure mode.
-- Performance pass on `versionx status` for large monorepos (500+ packages).
-
-**Considered:**
-
-- Per-package task caching (scaffolding for the local cache landing in 1.2).
-
----
-
-## 0.9 — ecosystem breadth
-
-**Planned:**
-
-- Go adapter (Tier 2 → Stable).
-- Ruby adapter (Tier 2 → Stable).
-- Go runtime installer.
-- Ruby runtime installer (rv primary, ruby-build fallback).
-
-**Considered:**
-
-- Bundler (Ruby) migration from `Gemfile.lock`.
 
 ---
 
@@ -69,51 +49,22 @@ Status legend:
 
 **Planned:**
 
-- Every subsystem tagged Stable (no `Experimental` badges on Reference pages).
-- Reusable GitHub Actions published to a stable org.
-- Cross-repo saga tested end-to-end by an outside user on ≥20 repos.
-- docs.rs API reference complete for the whole SDK surface.
+- Core CLI and docs surfaces stable enough to recommend broadly.
+- Broader package distribution channels live and verified.
+- Dependency-update workflows land as real commands.
+- Published automation surfaces that are actually supported, not just envisioned.
 - API and config stability guarantees documented.
 
 **Target:** late 2026. No committed date.
 
 ---
 
-## 1.1
+## Later milestones
 
-**Planned:**
-
-- OCI adapter (container-image-based artifacts).
-- JVM runtime installer (Temurin default, foojay Disco API).
-- Versioned docs on this site (snapshot 1.0 and 1.1).
-
----
-
-## 1.2
-
-**Planned:**
-
-- JVM adapter (Maven / Gradle).
-- Local task cache in `versionx-tasks`.
-- Remote state backend (Postgres).
-- Optional bearer-auth for the HTTP API.
-
-**Considered:**
-
-- Hosted GitHub App (SaaS). Still a business question.
-
----
-
-## 2.0
-
-**Planned:**
-
-- Remote task cache.
-- Large-fleet optimizations (multi-user shared daemon, systemd/launchd units).
-
-**Considered:**
-
-- Extension SDK for third-party adapters / policies / release strategies as first-class out-of-tree plugins.
+- Additional ecosystem breadth (Go/Ruby/JVM and beyond)
+- Better fleet ergonomics
+- Versioned docs
+- Optional remote backends and auth once the local-first story is solid
 
 ---
 

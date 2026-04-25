@@ -18,10 +18,10 @@ Target-level filtering uses crate names. Common patterns:
 
 ```bash
 # Adapter-level tracing only
-RUST_LOG=versionx_adapter_node=trace,versionx=info versionx update --plan
+RUST_LOG=versionx_adapter_node=trace,versionx=info versionx bump
 
 # Policy evaluation trace
-RUST_LOG=versionx_policy=trace versionx policy eval
+RUST_LOG=versionx_policy=trace versionx policy check
 ```
 
 ## Structured logs
@@ -41,15 +41,16 @@ versionx sync
 
 Traces go to whatever backend accepts OTLP — Jaeger, Tempo, Honeycomb, Datadog. The default export protocol is gRPC; set `VERSIONX_OTLP_PROTOCOL=http/protobuf` if your backend needs HTTP.
 
-## Use `--plan` to inspect behavior
+## Use the planner surfaces to inspect behavior
 
 If you're chasing "why is this command doing X":
 
 ```bash
-versionx update --plan --output json | jq
+versionx release plan --output json | jq
 ```
 
-The JSON plan is the exact set of mutations the command would make. Often you can spot the bug without running `apply`.
+The JSON plan is the exact set of mutations the release command would make.
+Often you can spot the bug without running `apply`.
 
 ## Use `versionx doctor`
 
@@ -63,8 +64,8 @@ Audits the environment: shell hook, PATH, daemon socket, runtime cache, state DB
 
 ### "It worked yesterday"
 
-- **Daemon holding stale state.** `versionx daemon restart`.
-- **Shim cache out of date.** `versionx shim rebuild`.
+- **Daemon holding stale state.** `versionx daemon stop && versionx daemon start`.
+- **Shell hook missing.** Re-run `versionx install-shell-hook`, then open a new shell.
 - **Clock skew.** Plan TTLs check against the system clock; if the clock jumped, recent plans may appear expired.
 
 ### "The plan doesn't match what happens"

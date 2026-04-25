@@ -75,7 +75,9 @@ Every mutating tool produces a JSON plan with:
 
 Versionx never calls an LLM on its own through MCP. The agent's LLM does the reasoning. Versionx serves context and accepts plans.
 
-For non-MCP environments where you still want AI assistance (e.g., a `--ai-changelog` flag), configure an API key. See [Environment variables](/reference/environment-variables) for the list.
+For non-MCP environments where you still want AI assistance, configure an API
+key and use the dedicated AI-assisted surfaces such as `versionx changelog draft`.
+See [Environment variables](/reference/environment-variables) for the list.
 
 ## Tool catalog
 

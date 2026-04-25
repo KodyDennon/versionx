@@ -51,33 +51,27 @@ worker  = { git = "https://github.com/acme/worker",   ref = "main" }
 
 ## Running commands across repos
 
-Every command takes `--scope`:
+The current alpha exposes fleet-oriented commands through the `fleet` surface
+rather than a universal `--scope` flag:
 
 ```bash
-versionx status --scope workspace    # default for monorepos
-versionx status --scope fleet        # every repo Versionx knows about
-versionx status --scope members:apps/web,apps/api   # explicit members
+versionx fleet status
+versionx fleet members
+versionx fleet query --help
+versionx fleet sync
 ```
-
-Per-repo output is merged and consistent regardless of topology.
-
-## Parallelism
-
-```bash
-versionx update --plan --scope fleet --jobs 8
-```
-
-Each member runs in its own process; Versionx deduplicates tool invocations and caches what it can. Defaults to `num_cpus::get().min(8)`.
 
 ## Atomic cross-repo releases (the saga protocol)
 
 To release a feature that spans several repos:
 
 ```bash
-versionx release plan --scope members:app-api,app-web,worker
+versionx fleet release --help
 ```
 
-Produces a single saga plan. Apply runs as a saga:
+The multi-repo saga protocol exists in the codebase, but the outside-user alpha
+story is still maturing. Treat it as advanced/experimental until the single-repo
+hardening work finishes.
 
 1. **Prepare** — verify every member can be released (git clean, lockfiles synced, policy green).
 2. **Commit** — on every member in order defined by the dep graph.
@@ -123,9 +117,8 @@ The Dashboard view shows every repo Versionx is aware of, their release status, 
 
 ## Troubleshooting
 
-- **A saga stuck after partial push.** `versionx saga status` shows the saga ID and step. `versionx saga compensate <id>` runs the compensation logic manually.
-- **Member not discovered.** Fleet config points to a repo that isn't reachable. `versionx fleet doctor` audits connectivity and permissions.
-- **Different members have conflicting pins.** `versionx fleet diff` shows drift.
+- **Member not discovered.** Check the fleet config and use `versionx fleet members` / `versionx fleet query` to inspect what the CLI sees.
+- **Different members have conflicting pins.** Use `versionx fleet status` and inspect the member configs directly; richer drift tooling is still part of the roadmap.
 
 ## See also
 

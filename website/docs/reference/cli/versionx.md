@@ -51,6 +51,7 @@ Cross-platform, cross-language, cross-package-manager version manager.
 | [`status`](./status) | Print a summary of the current workspace: detected ecosystems, pinned runtimes, outstanding changes, and policy findings |
 | [`sync`](./sync) | Install everything declared in `versionx.toml` + `versionx.lock`: toolchains, package managers, and dependencies |
 | [`tui`](./tui) | Launch the interactive terminal dashboard |
+| [`update`](./update) | Update ecosystem dependencies and refresh the recorded lock metadata |
 | [`verify`](./verify) | Verify that the lockfile matches the current manifest state. Designed for CI as a fast fail-closed integrity check |
 | [`waiver`](./waiver) | Waiver management — time-boxed policy exceptions |
 | [`which`](./which) | Show which binary the shim resolves to in the current context and why. Debugging aid for `PATH` / shim behavior |

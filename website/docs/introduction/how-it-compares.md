@@ -13,7 +13,7 @@ Versionx sits at the intersection of several existing tool categories. This page
 | Problem | Existing tools | What Versionx does differently |
 |---|---|---|
 | Runtime pinning | asdf, mise, proto, nvm, pyenv, rustup | One tool, faster (Rust), native shims, integrated with everything else in the stack |
-| Dependency management | npm, pip, cargo, bundle, maven, gradle directly | Unifies `status` / `update` / `audit` across ecosystems; does **not** replace the resolvers |
+| Dependency management | npm, pip, cargo, bundle, maven, gradle directly | The roadmap aims for a unified surface; the current alpha is still focused on discovery, releases, and runtime management |
 | Release automation | changesets, release-please, semantic-release | PR-title default, multi-ecosystem, multi-repo, AI-assisted via MCP |
 | Monorepo management | Nx, Turborepo, Lerna, moon | Language-agnostic; shells out to ecosystem tools; adds policy + cross-repo; native runner phased |
 | Multi-repo coordination | Meta, gita, vcstool | Adds a state DB, policy engine, and atomic release coordination |
@@ -32,7 +32,7 @@ Versionx sits at the intersection of several existing tool categories. This page
 - Package manager management is a first-class feature, not a hack. pnpm, yarn, and uv install as real pinned binaries — not via corepack, which is being removed from Node 25+.
 - Versionx knows about the rest of your stack. It knows what's in `package.json` because it also drives npm. asdf doesn't know or care.
 
-**What's the same:** the core developer UX — `versionx install`, `versionx current`, per-repo pins, drop-in shims. If you're a happy mise user, Versionx feels familiar. Migration guide: [Migrate from mise](/get-started/migrate-from-mise).
+**What's the same:** the core developer UX — `versionx install`, `versionx status`, per-repo pins, drop-in shims. If you're a happy mise user, Versionx feels familiar. Migration guide: [Migrate from mise](/get-started/migrate-from-mise).
 
 ## Versus changesets / release-please / semantic-release
 

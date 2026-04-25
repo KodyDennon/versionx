@@ -1,25 +1,34 @@
 ---
 title: GitHub Actions recipes
-description: Ready-to-paste workflows for install, sync, release, update, and policy. The reusable Versionx Actions.
+description: Plain GitHub Actions workflow examples for the current Versionx alpha.
 sidebar_position: 7
 ---
 
 # GitHub Actions recipes
 
-Official reusable actions live at [`KodyDennon/versionx-actions`](https://github.com/KodyDennon/versionx). Below are the common workflow shapes.
+Versionx does not yet publish reusable Actions. These examples use normal shell
+steps and a pinned Versionx release tag.
+
+Set this once per workflow:
+
+```yaml
+env:
+  VERSIONX_VERSION: v0.1.0-alpha.1776754296
+```
 
 ## Install Versionx
 
 Use on every job that needs the binary:
 
 ```yaml
-# .github/workflows/ci.yml (excerpt)
-- uses: KodyDennon/versionx-install-action@v1
+- uses: actions/checkout@v4
   with:
-    version: '0.7'      # or 'latest'
+    fetch-depth: 0
+- run: |
+    curl -LsSf \
+      "https://github.com/KodyDennon/versionx/releases/download/${VERSIONX_VERSION}/versionx-cli-installer.sh" | sh
+- run: versionx --version
 ```
-
-Caches the binary in `~/.cache/versionx-install-action` between runs.
 
 ## Daily sync
 
@@ -34,34 +43,32 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: KodyDennon/versionx-install-action@v1
+      - run: |
+          curl -LsSf \
+            "https://github.com/KodyDennon/versionx/releases/download/${VERSIONX_VERSION}/versionx-cli-installer.sh" | sh
       - run: versionx sync --no-daemon
 ```
 
-## Weekly dependency updates
+## Dependency updates
 
-One PR per ecosystem with grouped patch bumps:
+You can preview or run dependency updates in CI today. The current alpha does
+not yet have a separate approve/apply artifact for updates, so the command you
+run is the command that performs the work.
+
+Preview only:
 
 ```yaml
-name: versionx update
-on:
-  schedule:
-    - cron: '0 6 * * 1'        # Mondays 06:00 UTC
-  workflow_dispatch:
-
-jobs:
-  update:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-        with: { token: ${{ secrets.GITHUB_TOKEN }} }
-      - uses: KodyDennon/versionx-install-action@v1
-      - uses: KodyDennon/versionx-update-action@v1
-        with:
-          mode: pr                   # open a PR per ecosystem
-          patch-only: true
-          branch-prefix: deps/
+- run: versionx update --plan --ecosystem rust
 ```
+
+Execute:
+
+```yaml
+- run: versionx update --ecosystem rust
+```
+
+If you want PR automation, wrap this in your own branch-and-commit workflow for
+now.
 
 ## Release on merge to main
 
@@ -78,44 +85,20 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
-      pull-requests: write
     steps:
       - uses: actions/checkout@v4
         with: { fetch-depth: 0 }
-      - uses: KodyDennon/versionx-install-action@v1
-      - uses: KodyDennon/versionx-release-action@v1
-        with:
-          mode: direct
-          strategy: pr-title
-          push: true
+      - run: |
+          curl -LsSf \
+            "https://github.com/KodyDennon/versionx/releases/download/${VERSIONX_VERSION}/versionx-cli-installer.sh" | sh
+      - run: versionx release plan
+      - run: versionx release approve "$PLAN_ID"
+      - run: versionx release apply "$PLAN_ID"
+      - run: git push --follow-tags
 ```
 
-## Release-PR pattern (release-please style)
-
-If you want release-please's "maintain a PR that opens when bumps accumulate" behavior:
-
-```yaml
-name: versionx release PR
-on:
-  push:
-    branches: [main]
-
-jobs:
-  release-pr:
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-      pull-requests: write
-    steps:
-      - uses: actions/checkout@v4
-        with: { fetch-depth: 0 }
-      - uses: KodyDennon/versionx-install-action@v1
-      - uses: KodyDennon/versionx-release-action@v1
-        with:
-          mode: release-pr
-          strategy: pr-title
-          pr-branch: release-please-compat     # rename to whatever you like
-```
+Capture the `plan_id` from `versionx release plan` in a step output or shell
+variable. The alpha CLI applies by `plan_id`, not by passing a JSON file path.
 
 ## Policy check on every PR
 
@@ -130,11 +113,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: KodyDennon/versionx-install-action@v1
-      - uses: KodyDennon/versionx-policy-action@v1
-        with:
-          scope: workspace
-          fail-on: deny                 # or: warn, or: none
+      - run: |
+          curl -LsSf \
+            "https://github.com/KodyDennon/versionx/releases/download/${VERSIONX_VERSION}/versionx-cli-installer.sh" | sh
+      - run: versionx policy check
 ```
 
 ## Composing: full CI
@@ -148,14 +130,14 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: KodyDennon/versionx-install-action@v1
+      - run: |
+          curl -LsSf \
+            "https://github.com/KodyDennon/versionx/releases/download/${VERSIONX_VERSION}/versionx-cli-installer.sh" | sh
       - run: versionx sync --no-daemon
-      - run: versionx policy eval --fail-on deny
-      - run: versionx run --task test
-      - run: versionx run --task lint
+      - run: versionx policy check
+      - run: cargo test --workspace
+      - run: cargo clippy --workspace --all-targets -- -D warnings
 ```
-
-`versionx run --task test` executes whatever `[tasks.test]` in `versionx.toml` defines. See the `[tasks]` section in [`versionx.toml` reference](/reference/versionx-toml).
 
 ## Publish step
 
@@ -173,7 +155,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with: { fetch-depth: 0 }
-      - uses: KodyDennon/versionx-install-action@v1
+      - run: |
+          curl -LsSf \
+            "https://github.com/KodyDennon/versionx/releases/download/${VERSIONX_VERSION}/versionx-cli-installer.sh" | sh
       - run: versionx sync --no-daemon
       - run: npm publish
         env:

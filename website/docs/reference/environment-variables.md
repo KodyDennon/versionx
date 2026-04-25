@@ -40,7 +40,7 @@ Everything Versionx reads from the environment, grouped by category.
 
 | Variable | Default | Description |
 |---|---|---|
-| `ANTHROPIC_API_KEY` | unset | Used by `--ai-changelog` and `versionx mcp` if Anthropic is selected. |
+| `ANTHROPIC_API_KEY` | unset | Used by AI-assisted surfaces such as `versionx changelog draft` and MCP-adjacent flows if Anthropic is selected. |
 | `OPENAI_API_KEY` | unset | OpenAI path. |
 | `GEMINI_API_KEY` | unset | Google Gemini path. |
 | `OLLAMA_BASE_URL` | unset | Local Ollama endpoint. |

@@ -69,7 +69,7 @@ This means:
 
 - Diff noise is minimal. Changing one dep in one ecosystem updates one hash and the upstream lockfile.
 - Merges are tractable. See below.
-- `versionx sync` verifies every hash on startup; any drift prints a clear error.
+- `versionx sync` and `versionx update` rewrite the file from the current workspace state.
 
 ## Merge conflicts
 
@@ -83,7 +83,9 @@ Resolve the native lockfile (`pnpm-lock.yaml`, `Cargo.lock`, etc.) first using t
 versionx sync
 ```
 
-which recomputes the Blake3 hashes and rewrites `versionx.lock` cleanly.
+which recomputes the Blake3 hashes and rewrites `versionx.lock` cleanly. If the
+conflict came from an update workflow, `versionx update` also refreshes the same
+metadata after it runs.
 
 ### Only `versionx.lock` conflicted
 
@@ -102,4 +104,4 @@ Accept either side, then run `versionx sync`. Versionx re-verifies every hash an
 ## See also
 
 - [`versionx.toml` reference](./versionx-toml) — config that drives what's in the lockfile.
-- [Polyglot dependency updates](/guides/polyglot-dependency-updates) — how updates flow into the lockfile.
+- [Polyglot dependency updates](/guides/polyglot-dependency-updates) — how `versionx update` flows into the lockfile.

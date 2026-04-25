@@ -17,10 +17,11 @@ You'll learn:
 ## The fast path
 
 ```bash
-versionx migrate asdf
+versionx import --from asdf
 ```
 
-Versionx reads `.tool-versions` in the current directory and writes a `versionx.toml` that expresses the same pins. If you'd rather keep `.tool-versions` as the source of truth, set `[workspace] tool-versions = true` in `versionx.toml` — Versionx will read from it on every run.
+Versionx reads `.tool-versions` in the current directory and writes a
+`versionx.toml` that expresses the same pins.
 
 ## Config mapping
 
@@ -38,12 +39,9 @@ Versionx has native runtime installers for the languages most people use asdf fo
 
 | Language | asdf plugin | Versionx runtime |
 |---|---|---|
-| Node.js | `asdf-nodejs` | `versionx-runtime-node` (Stable) |
-| Python | `asdf-python` | `versionx-runtime-python` (Stable, via `python-build-standalone`) |
-| Rust | `asdf-rust` | `versionx-runtime-rust` (Stable, wraps rustup) |
-| Ruby | `asdf-ruby` | `versionx-runtime-ruby` (Experimental, 1.1 Stable — uses `rv` with `ruby-build` fallback) |
-| Go | `asdf-golang` | `versionx-runtime-go` (Experimental, 1.1 Stable) |
-| Java | `asdf-java` | `versionx-runtime-jvm` (Experimental, 1.1 Stable — Temurin default via foojay) |
+| Node.js | `asdf-nodejs` | `versionx-runtime-node` |
+| Python | `asdf-python` | `versionx-runtime-python` |
+| Rust | `asdf-rust` | `versionx-runtime-rust` |
 
 For languages Versionx doesn't support yet, stay on asdf for those specific tools. Versionx's shim dispatch respects PATH, so asdf-managed tools continue to work as long as asdf stays activated.
 
@@ -64,7 +62,7 @@ This matters if you have editors that run `node --version` on every save.
 
 ## What changes
 
-- **`versionx current` replaces `asdf current`.**
+- **`versionx status` replaces most of what you used `asdf current` for.**
 - **`versionx install` replaces `asdf install` (and you can drop the language name for "install all pins in this repo").**
 - **No `asdf plugin add` step.** Runtimes Versionx supports are built-in.
 
@@ -78,7 +76,7 @@ This matters if you have editors that run `node --version` on every save.
 
 - **`command not found` after cutover.** Open a new shell. PATH changes only apply to future shells.
 - **`asdf: No such plugin`.** You've removed asdf but a shim for an asdf-managed tool is still resolving. Delete `~/.asdf` or run `versionx doctor` for a full PATH audit.
-- **Ruby fails to build on macOS.** The `ruby-build` fallback sometimes needs Homebrew-installed `openssl@3` on macOS. `versionx runtime doctor ruby` prints the specific command to fix.
+- **A language you use is not supported yet.** Keep asdf active for that tool and let Versionx handle the runtimes it already supports well.
 
 ## See also
 

@@ -10,7 +10,7 @@ You'll learn:
 
 - How to pin Node, Python, Rust (and more) per repo.
 - What Versionx's shim layer actually does.
-- How to install, update, and remove runtimes.
+- How to install, list, and prune runtimes.
 - How to share a set of pins across a fleet.
 
 **Prerequisites:** Versionx [installed](/get-started/install); `versionx install-shell-hook` run once.
@@ -57,17 +57,19 @@ versionx install node 22.11.0
 List what's installed:
 
 ```bash
-versionx list
+versionx runtime list
 ```
 
 ## Switch versions
 
 Edit `versionx.toml`. The shim picks up the change immediately — no shell reload needed. `versionx install` (or `versionx sync`) will pull the new version if it isn't cached.
 
-You can also override on the command line for one invocation:
+You can also set user-wide defaults:
 
 ```bash
-versionx run --node 20 -- npm test
+versionx global set node 22
+versionx global get node
+versionx global unset node
 ```
 
 ## Global defaults
@@ -97,17 +99,11 @@ Versionx installs them as real binaries — **not** via corepack (which is being
 
 ## Clean up
 
-Remove a runtime you no longer use:
-
-```bash
-versionx uninstall python 3.12.7
-```
-
 Prune runtimes not referenced by any known repo:
 
 ```bash
-versionx prune --dry-run      # show what would be removed
-versionx prune
+versionx runtime prune --dry-run
+versionx runtime prune
 ```
 
 ## Sharing pins across a fleet
@@ -134,7 +130,7 @@ See [Multi-repo & monorepos](/guides/multi-repo-and-monorepos) for how the fleet
 ## Troubleshooting
 
 - **`command not found` inside a repo.** Run `versionx doctor`. Likely the shim directory isn't on PATH — check your shell rc has the `versionx install-shell-hook` line.
-- **Version mismatch.** `versionx current` prints the authoritative resolution with the reason ("from ./versionx.toml line 4", "from global ~/.config/versionx/config.toml", etc.).
+- **Version mismatch.** `versionx which <tool>` shows the resolved binary and why it was chosen.
 - **Slow first run of a tool.** First invocation of a newly-installed runtime pays a shim cache rebuild cost (~5ms). Subsequent runs are sub-ms.
 
 ## See also

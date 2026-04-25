@@ -12,12 +12,12 @@ Ollama is a local-only model runner. MCP support depends on the client you pair 
 
 ### 1. BYO-API-key mode (no MCP)
 
-Point the `--ai-*` flags at your local Ollama endpoint:
+Point the AI-assisted surfaces at your local Ollama endpoint:
 
 ```bash
 export OLLAMA_BASE_URL=http://127.0.0.1:11434
 export VERSIONX_AI_PROVIDER=ollama
-versionx release plan --ai-changelog
+versionx changelog draft
 ```
 
 This uses Ollama for one-shot LLM calls without any MCP dance. Simplest path for local-only use.
