@@ -113,7 +113,7 @@ jobs:
           key: cross-${{ matrix.target }}
       - name: Install zig
         if: startsWith(matrix.runner, 'ubuntu') || startsWith(matrix.runner, 'macos')
-        uses: mlugg/setup-zig@v1
+        uses: mlugg/setup-zig@v2
         with:
           version: 0.13.0
       - name: Install cargo-zigbuild
