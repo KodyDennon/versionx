@@ -150,7 +150,7 @@ chrono = { version = "0.4", features = ["serde"] }
 time = { version = "0.3", features = ["serde", "formatting", "parsing"] }
 
 # Process / env
-duct = "0.13"
+duct = "1.1"
 which = "7.0"
 shell-words = "1.1"
 os_str_bytes = "7.0"
