@@ -126,7 +126,7 @@ xz2 = "0.1"
 zip = { version = "2.2", default-features = false, features = ["deflate", "bzip2", "time"] }
 
 # Hashing
-blake3 = "1.5"
+blake3 = "1.8"
 sha2 = "0.10"
 hex = "0.4"
 
