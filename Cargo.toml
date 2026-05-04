@@ -103,7 +103,7 @@ opentelemetry-otlp = { version = "0.28", features = ["grpc-tonic", "http-proto"]
 clap = { version = "4.5", features = ["derive", "env", "wrap_help"] }
 clap_complete = "4.5"
 clap_mangen = "0.2"
-ratatui = "0.29"
+ratatui = "0.30"
 crossterm = "0.28"
 
 # HTTP / web
