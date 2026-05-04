@@ -127,7 +127,7 @@ zip = { version = "2.2", default-features = false, features = ["deflate", "bzip2
 
 # Hashing
 blake3 = "1.5"
-sha2 = "0.10"
+sha2 = "0.11"
 hex = "0.4"
 
 # Git
