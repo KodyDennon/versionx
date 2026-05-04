@@ -145,7 +145,7 @@ mlua = { version = "0.10", features = ["luau", "luau-jit", "async", "send"] }
 
 # Paths / Time
 camino = { version = "1.1", features = ["serde1"] }
-directories = "5.0"
+directories = "6.0"
 chrono = { version = "0.4", features = ["serde"] }
 time = { version = "0.3", features = ["serde", "formatting", "parsing"] }
 
