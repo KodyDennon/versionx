@@ -151,7 +151,7 @@ time = { version = "0.3", features = ["serde", "formatting", "parsing"] }
 
 # Process / env
 duct = "0.13"
-which = "7.0"
+which = "8.0"
 shell-words = "1.1"
 os_str_bytes = "7.0"
 
