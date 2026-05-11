@@ -43,7 +43,7 @@ parking_lot.workspace = true
 blake3.workspace = true
 bytes.workspace = true
 uuid.workspace = true
-notify = "7.0"
+notify = "8.2"
 notify-debouncer-full = "0.4"
 pin-project-lite = { workspace = true }
 indexmap = { workspace = true }
